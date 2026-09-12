@@ -157,9 +157,9 @@ export function buildGrokArgs(options = {}) {
   if (options.bestOfN && Number(options.bestOfN) > 1) {
     args.push("--best-of-n", String(options.bestOfN));
   }
-  if (options.check) {
-    args.push("--check");
-  }
+  // Grok CLI 1.0 removed the legacy --check flag. Verification remains a
+  // companion-level policy: task prompts require permitted local checks and
+  // Codex independently reviews the resulting diff before accepting it.
   if (options.worktree) {
     if (typeof options.worktree === "string" && options.worktree !== "true") {
       args.push("--worktree", options.worktree);

@@ -35,7 +35,7 @@ test("tryParseStructuredReview parses fenced JSON", () => {
   assert.equal(reviewHasBlockingFindings(review), true);
 });
 
-test("buildGrokArgs supports best-of-n check worktree schema", () => {
+test("buildGrokArgs supports best-of-n worktree schema without legacy check flag", () => {
   const args = buildGrokArgs({
     prompt: "fix it",
     write: true,
@@ -46,7 +46,7 @@ test("buildGrokArgs supports best-of-n check worktree schema", () => {
   });
   assert.ok(args.includes("--best-of-n"));
   assert.ok(args.includes("3"));
-  assert.ok(args.includes("--check"));
+  assert.ok(!args.includes("--check"));
   assert.ok(args.includes("--worktree"));
   assert.ok(args.includes("rescue-1"));
   assert.ok(args.includes("--json-schema"));

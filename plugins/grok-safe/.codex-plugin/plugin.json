@@ -1,6 +1,6 @@
 {
   "name": "grok-safe",
-  "version": "0.5.8-safe.1+codex.20260912140805",
+  "version": "0.5.8-safe.1+codex.20260912142420",
   "description": "Codex-supervised Grok worker with project-scoped writes and fail-closed permissions.",
   "author": {
     "name": "stdevMac",
