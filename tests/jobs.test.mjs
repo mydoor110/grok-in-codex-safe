@@ -24,7 +24,7 @@ import {
   tryReadResultPayload,
   upsertJob,
   writeJobFile
-} from "../plugins/grok/scripts/lib/jobs.mjs";
+} from "../plugins/grok-safe/scripts/lib/jobs.mjs";
 
 function withTempWorkspace(fn) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "grok-jobs-"));

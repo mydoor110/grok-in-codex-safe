@@ -14,7 +14,7 @@ import {
   shouldSkipEmptyFindingsPost,
   wantsPostPending,
   writeRecoverableReviewFindings
-} from "../plugins/grok/scripts/lib/review.mjs";
+} from "../plugins/grok-safe/scripts/lib/review.mjs";
 
 const FIXTURE_DIFF = `diff --git a/src/foo.js b/src/foo.js
 --- a/src/foo.js

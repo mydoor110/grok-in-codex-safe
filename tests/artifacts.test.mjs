@@ -12,7 +12,7 @@ import {
   primaryArtifacts,
   resolveExecutePlanDesignPath,
   resolveLatestDesignDoc
-} from "../plugins/grok/scripts/lib/artifacts.mjs";
+} from "../plugins/grok-safe/scripts/lib/artifacts.mjs";
 
 test("extractDesignDocPathFromText reads DESIGN_DOC_PATH marker", () => {
   const p = extractDesignDocPathFromText(

@@ -4,9 +4,9 @@ import test from "node:test";
 import {
   reviewHasBlockingFindings,
   tryParseStructuredReview
-} from "../plugins/grok/scripts/lib/review.mjs";
-import { extractArtifactPaths } from "../plugins/grok/scripts/lib/media.mjs";
-import { buildGrokArgs } from "../plugins/grok/scripts/lib/grok.mjs";
+} from "../plugins/grok-safe/scripts/lib/review.mjs";
+import { extractArtifactPaths } from "../plugins/grok-safe/scripts/lib/media.mjs";
+import { buildGrokArgs } from "../plugins/grok-safe/scripts/lib/grok.mjs";
 
 test("tryParseStructuredReview parses fenced JSON", () => {
   const review = tryParseStructuredReview(`Here you go:
@@ -50,7 +50,7 @@ test("buildGrokArgs supports best-of-n check worktree schema", () => {
   assert.ok(args.includes("--worktree"));
   assert.ok(args.includes("rescue-1"));
   assert.ok(args.includes("--json-schema"));
-  assert.ok(args.includes("--yolo"));
+  assert.ok(!args.includes("--yolo"));
 });
 
 test("buildGrokArgs media mode uses denylist without yolo", () => {

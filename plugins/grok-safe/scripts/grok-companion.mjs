@@ -756,10 +756,8 @@ async function commandTask(argv) {
   const effort = normalizeEffort(options.effort, modelAlias);
   const background = Boolean(options.background);
   const bestOfN = options["best-of-n"] ? Number(options["best-of-n"]) : null;
-  const worktree =
-    options["worktree-name"] ||
-    (options.worktree ? true : false);
-  const check = Boolean(options.check);
+  const worktree = options["worktree-name"] || true;
+  const check = true;
 
   let resume = null;
   if (options.fresh) {
@@ -783,10 +781,12 @@ async function commandTask(argv) {
     check
   });
 
+  const supervisedPrompt = `You are a worker supervised by Codex. Work only inside the active Git worktree. Do not read files outside it. Do not access secrets, credentials, or .env files. Do not push, publish, open PRs, contact external services, change git hooks, or weaken security controls. Make the requested project changes, run only permitted local checks, and finish with a precise changed-files and verification report. Codex will independently review every diff before accepting it.\n\nTASK FROM CODEX:\n${prompt}`;
+
   const job = createJobShell(cwd, {
     kind: "task",
     title: titleFromPrompt(prompt),
-    prompt,
+    prompt: supervisedPrompt,
     write: writeMode,
     model,
     effort,

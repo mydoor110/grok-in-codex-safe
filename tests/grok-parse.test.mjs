@@ -8,7 +8,7 @@ import {
   getStreamProgressHelperSource,
   humanizeGrokFailure,
   parseGrokJsonOutput
-} from "../plugins/grok/scripts/lib/grok.mjs";
+} from "../plugins/grok-safe/scripts/lib/grok.mjs";
 
 test("parseGrokJsonOutput reads success payload", () => {
   const parsed = parseGrokJsonOutput(
@@ -30,9 +30,9 @@ test("parseGrokJsonOutput reads error payload", () => {
   assert.match(parsed.error, /nope/);
 });
 
-test("buildGrokArgs write mode uses yolo", () => {
+test("buildGrokArgs write mode never uses yolo", () => {
   const args = buildGrokArgs({ prompt: "hi", write: true, model: "grok-4.5" });
-  assert.ok(args.includes("--yolo"));
+  assert.ok(!args.includes("--yolo"));
   assert.ok(args.includes("-m"));
   assert.ok(args.includes("grok-4.5"));
 });

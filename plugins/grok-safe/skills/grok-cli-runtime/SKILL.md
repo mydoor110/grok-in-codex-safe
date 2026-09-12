@@ -4,9 +4,9 @@ description: Internal helper contract for calling the grok-companion runtime fro
 user-invocable: false
 ---
 
-# Grok Runtime
+# Grok Safe Runtime
 
-Use through the Grok MCP tools. If MCP is unavailable, call the companion directly with `node plugins/grok/scripts/grok-companion.mjs <command> ...`.
+Use through the Grok MCP tools. If MCP is unavailable, call the companion directly with `node plugins/grok-safe/scripts/grok-companion.mjs <command> ...`.
 
 Recommended Grok CLI version: **≥ 0.2.118**.
 
@@ -43,10 +43,15 @@ MCP input keys map to companion flags:
 
 ## CLI posture
 
-- Prefer **denylist** (`--disallowed-tools`) over tools allowlist (Grok session-create bugs).
+- Write tasks use `permissionMode=dontAsk` with explicit allow rules and a workspace sandbox.
+- `--yolo` / bypass-permissions are forbidden.
+- Ordinary project edits and safe tests are approved by Codex through built-in allow rules.
+- Sensitive files, package installation, external paths, remote effects, infrastructure tools, or
+  broader permissions require explicit user approval and `sensitiveApproved=true`.
+- Web search, memory, and Grok subagents are disabled by default.
 - Media: no yolo / no tools allowlist.
 - `--dry-run` / `--validate-only` / babysit `list`: **read-only** (no yolo).
-- Write-capable default for rescue/design/execute/babysit add|check|remove.
+- Write-capable operations run under Codex supervision and must be reviewed by Codex afterward.
 
 ## Depth notes
 

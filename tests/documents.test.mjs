@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildDocumentPrompt, normalizeDocumentType } from "../plugins/grok/scripts/lib/documents.mjs";
+import { buildDocumentPrompt, normalizeDocumentType } from "../plugins/grok-safe/scripts/lib/documents.mjs";
 
 test("normalizeDocumentType accepts pptx pdf docx", () => {
   assert.equal(normalizeDocumentType("pptx"), "pptx");

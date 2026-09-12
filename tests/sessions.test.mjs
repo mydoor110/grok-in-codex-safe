@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseSessionsCliOutput } from "../plugins/grok/scripts/lib/sessions.mjs";
+import { parseSessionsCliOutput } from "../plugins/grok-safe/scripts/lib/sessions.mjs";
 
 test("parseSessionsCliOutput reads uuid lines", () => {
   const text = `

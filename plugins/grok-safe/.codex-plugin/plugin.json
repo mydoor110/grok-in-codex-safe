@@ -1,0 +1,43 @@
+{
+  "name": "grok-safe",
+  "version": "0.5.8-safe.1",
+  "description": "Codex-supervised Grok worker with project-scoped writes and fail-closed permissions.",
+  "author": {
+    "name": "stdevMac",
+    "url": "https://github.com/stdevMac"
+  },
+  "homepage": "https://github.com/stdevMac/grok-in-codex",
+  "repository": "https://github.com/stdevMac/grok-in-codex",
+  "license": "Apache-2.0",
+  "keywords": [
+    "grok",
+    "xai",
+    "codex",
+    "mcp",
+    "code-review",
+    "delegation",
+    "image-generation",
+    "video-generation"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Grok Safe",
+    "shortDescription": "Codex-supervised Grok execution inside project boundaries",
+    "longDescription": "Use Grok as a write-capable worker while Codex remains the orchestrator and reviewer. Routine project edits are automatic; sensitive files, remote effects, and elevated permissions require user approval.",
+    "developerName": "Local fork of stdevMac",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/stdevMac/grok-in-codex",
+    "defaultPrompt": [
+      "Delegate this implementation to Grok and review its diff",
+      "Ask Grok for a second implementation in a worktree",
+      "Have Grok fix this bug, then run Codex review"
+    ],
+    "brandColor": "#111111"
+  }
+}

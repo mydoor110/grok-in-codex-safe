@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildDesignPrompt, buildExecutePlanPrompt } from "../plugins/grok/scripts/lib/design.mjs";
+import { buildDesignPrompt, buildExecutePlanPrompt } from "../plugins/grok-safe/scripts/lib/design.mjs";
 
 test("buildDesignPrompt requires brief", () => {
   assert.throws(() => buildDesignPrompt(""), /required/i);

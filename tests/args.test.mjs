@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { expandArgv, parseArgs, splitRawArgumentString } from "../plugins/grok/scripts/lib/args.mjs";
+import { expandArgv, parseArgs, splitRawArgumentString } from "../plugins/grok-safe/scripts/lib/args.mjs";
 
 test("expandArgv always splits a single shell-word blob (flagless multi-word)", () => {
   // Claude Code slash commands pass "$ARGUMENTS" as one argv entry without requiring "--"

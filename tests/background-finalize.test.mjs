@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const COMPANION = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../plugins/grok/scripts/grok-companion.mjs"
+  "../plugins/grok-safe/scripts/grok-companion.mjs"
 );
 
 /**
@@ -32,7 +32,7 @@ test("result reconciles reaper-failed plan with result.json and harvests plan.md
   delete process.env.CODEX_PLUGIN_DATA;
 
   // Dynamic import after env set
-  return import("../plugins/grok/scripts/lib/jobs.mjs").then(async (jobs) => {
+  return import("../plugins/grok-safe/scripts/lib/jobs.mjs").then(async (jobs) => {
     const {
       resolveStateDir,
       resolveJobsDir,
@@ -50,7 +50,7 @@ test("result reconciles reaper-failed plan with result.json and harvests plan.md
     const sessionId = "11111111-2222-4333-8444-555555555555";
 
     // Fake session plan.md where harvest looks
-    const { resolveGrokSessionDir } = await import("../plugins/grok/scripts/lib/media.mjs");
+    const { resolveGrokSessionDir } = await import("../plugins/grok-safe/scripts/lib/media.mjs");
     const sessionDir = resolveGrokSessionDir(cwd, sessionId);
     fs.mkdirSync(sessionDir, { recursive: true });
     fs.writeFileSync(

@@ -9,7 +9,7 @@ import {
   discoverWorkflows,
   parseWorkflowArgs,
   tryParseWorkflowMeta
-} from "../plugins/grok/scripts/lib/workflow.mjs";
+} from "../plugins/grok-safe/scripts/lib/workflow.mjs";
 
 test("buildWorkflowPrompt requires name", () => {
   assert.throws(() => buildWorkflowPrompt({ name: "" }), /required/i);

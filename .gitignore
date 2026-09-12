@@ -2,6 +2,8 @@
 *.log
 coverage/
 node_modules/
+.build_tools/
+.test-tmp/
 npm-debug.log*
 .grok-plans/
 .grok-designs/

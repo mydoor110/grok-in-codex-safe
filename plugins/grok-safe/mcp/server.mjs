@@ -5,8 +5,13 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
+import {
+  enforceInvocationSecurity,
+  resolveGitWorkspace,
+  sanitizedEnvironment
+} from "./security.mjs";
 
-const SERVER_VERSION = "0.5.8";
+const SERVER_VERSION = "0.5.8-safe.1";
 const ROOT_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const COMPANION = path.join(ROOT_DIR, "scripts", "grok-companion.mjs");
 
@@ -41,6 +46,9 @@ const CONTROL_PROPERTIES = {
   disableWebSearch: booleanSchema("Disable web search tools."),
   forkSession: booleanSchema("Fork the current Grok session."),
   maxTurns: integerSchema("Maximum Grok turns for this job.")
+  ,sensitiveApproved: booleanSchema(
+    "Set only after the user explicitly approves access to sensitive files or remote/privileged effects."
+  )
 };
 
 const COMMON_JOB_PROPERTIES = {
@@ -70,7 +78,7 @@ const TOOL_DEFINITIONS = [
   },
   {
     name: "grok_rescue",
-    description: "Delegate investigation, implementation, or fixes to Grok. Write-capable by default.",
+    description: "Codex-supervised Grok worker. Writes inside a Git worktree without user prompts; Codex must review the diff before applying it.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -346,18 +354,11 @@ function hasValue(value) {
 
 export function resolveMcpCwd(input = {}) {
   const requested = hasValue(input.cwd) ? String(input.cwd) : process.cwd();
-  const cwd = path.resolve(requested);
-
-  let stats;
   try {
-    stats = fs.statSync(cwd);
-  } catch {
-    throw new Error(`Workspace directory does not exist: ${cwd}`);
+    return resolveGitWorkspace(requested);
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : String(error));
   }
-  if (!stats.isDirectory()) {
-    throw new Error(`Workspace path is not a directory: ${cwd}`);
-  }
-  return cwd;
 }
 
 function pushFlag(args, condition, flag) {
@@ -396,6 +397,7 @@ function appendControlArgs(args, input) {
   pushFlag(args, input.disableWebSearch, "--disable-web-search");
   pushFlag(args, input.forkSession, "--fork-session");
   pushValue(args, input.maxTurns, "--max-turns");
+  pushFlag(args, input.sensitiveApproved, "--sensitive-approved");
 }
 
 function appendCommonJobArgs(args, input) {
@@ -646,11 +648,12 @@ export function buildCompanionInvocation(toolName, input = {}) {
 export function runCompanion(toolName, input = {}) {
   const { args } = buildCompanionInvocation(toolName, input);
   const cwd = resolveMcpCwd(input);
+  enforceInvocationSecurity(toolName, input, cwd);
 
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [COMPANION, ...args], {
       cwd,
-      env: process.env,
+      env: sanitizedEnvironment(process.env),
       stdio: ["ignore", "pipe", "pipe"]
     });
 
@@ -707,7 +710,7 @@ async function handleRequest(message) {
           result: {
             protocolVersion: message.params?.protocolVersion || "2024-11-05",
             capabilities: { tools: {} },
-            serverInfo: { name: "grok-in-codex", version: SERVER_VERSION }
+            serverInfo: { name: "grok-safe", version: SERVER_VERSION }
           }
         };
       case "tools/list":

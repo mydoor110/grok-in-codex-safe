@@ -11,17 +11,17 @@ import {
   extractArtifactPaths,
   findSessionMediaFiles,
   resolveGrokSessionDir
-} from "../plugins/grok/scripts/lib/media.mjs";
+} from "../plugins/grok-safe/scripts/lib/media.mjs";
 
 test("encodeGrokSessionWorkspaceKey percent-encodes slashes", () => {
   const key = encodeGrokSessionWorkspaceKey("/Users/me/proj");
-  assert.equal(key, "%2FUsers%2Fme%2Fproj");
+  assert.equal(key, encodeURIComponent(path.resolve("/Users/me/proj")));
 });
 
 test("resolveGrokSessionDir nests under ~/.grok/sessions", () => {
   const dir = resolveGrokSessionDir("/tmp/ws", "sess-abc");
   assert.ok(dir.includes(path.join(".grok", "sessions")));
-  assert.ok(dir.endsWith(path.join("%2Ftmp%2Fws", "sess-abc")));
+  assert.ok(dir.endsWith(path.join(encodeURIComponent(path.resolve("/tmp/ws")), "sess-abc")));
 });
 
 test("copyMediaToDir copies into destination with unique names", () => {

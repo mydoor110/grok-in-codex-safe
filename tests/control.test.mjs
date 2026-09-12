@@ -9,9 +9,9 @@ import {
   controlToGrokFields,
   controlToJobConfig,
   normalizeControlOptions
-} from "../plugins/grok/scripts/lib/control.mjs";
-import { buildGrokArgs } from "../plugins/grok/scripts/lib/grok.mjs";
-import { parseArgs } from "../plugins/grok/scripts/lib/args.mjs";
+} from "../plugins/grok-safe/scripts/lib/control.mjs";
+import { buildGrokArgs } from "../plugins/grok-safe/scripts/lib/grok.mjs";
+import { parseArgs } from "../plugins/grok-safe/scripts/lib/args.mjs";
 
 test("normalizeControlOptions maps sandbox aliases", () => {
   const c = normalizeControlOptions({ sandbox: "ro" });
@@ -35,12 +35,31 @@ test("memory true/false/null map correctly", () => {
   assert.deepEqual(controlToGrokFields(normalizeControlOptions({ memory: false })).memory, {
     enable: false
   });
-  assert.equal(controlToGrokFields(normalizeControlOptions({})).memory, null);
+  assert.deepEqual(controlToGrokFields(normalizeControlOptions({})).memory, { enable: false });
 });
 
 test("controlFromParsedOptions handles --memory and --no-memory", () => {
   assert.equal(controlFromParsedOptions({ memory: true }).memory, true);
   assert.equal(controlFromParsedOptions({ "no-memory": true }).memory, false);
+});
+
+test("secure defaults auto-approve only explicit project-safe capabilities", () => {
+  const control = normalizeControlOptions({});
+  assert.equal(control.sandbox, "workspace");
+  assert.equal(control.permissionMode, "dontAsk");
+  assert.equal(control.noSubagents, true);
+  assert.equal(control.disableWebSearch, true);
+  assert.ok(control.allow.includes("Edit"));
+  assert.ok(control.allow.includes("Bash(npm test*)"));
+  assert.ok(control.deny.includes("Bash(git push*)"));
+});
+
+test("secure defaults reject bypass-permissions and disabled sandbox", () => {
+  assert.throws(
+    () => normalizeControlOptions({ permissionMode: "bypassPermissions" }),
+    /forbids/
+  );
+  assert.throws(() => normalizeControlOptions({ sandbox: "off" }), /requires/);
 });
 
 test("buildGrokArgs emits control surface flags", () => {

@@ -5,7 +5,7 @@ import {
   babysitSupportsBackground,
   buildBabysitPrompt,
   parseBabysitInvocation
-} from "../plugins/grok/scripts/lib/babysit.mjs";
+} from "../plugins/grok-safe/scripts/lib/babysit.mjs";
 
 test("parseBabysitInvocation parses add with prs", () => {
   const r = parseBabysitInvocation(["add", "12", "#34"]);

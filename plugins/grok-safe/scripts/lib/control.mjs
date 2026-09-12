@@ -13,6 +13,21 @@ const PERMISSION_MODES = new Set([
   "plan"
 ]);
 
+export const SAFE_DEFAULT_ALLOW = [
+  "Read", "Grep", "Glob", "Edit", "Write",
+  "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(git show*)",
+  "Bash(git rev-parse*)", "Bash(npm test*)", "Bash(npm run test*)",
+  "Bash(npm run lint*)", "Bash(npm run build*)", "Bash(pnpm test*)",
+  "Bash(pnpm lint*)", "Bash(pnpm build*)", "Bash(yarn test*)", "Bash(pytest*)"
+];
+
+export const SAFE_DEFAULT_DENY = [
+  "Bash(git push*)", "Bash(gh *)", "Bash(rm -rf*)", "Bash(del *)",
+  "Bash(Remove-Item*)", "Bash(curl*)", "Bash(wget*)", "Bash(Invoke-WebRequest*)",
+  "Bash(npm publish*)", "Bash(docker*)", "Bash(kubectl*)", "Bash(terraform*)",
+  "Bash(aws *)", "Bash(az *)", "Bash(gcloud *)", "Bash(ssh *)", "Bash(scp *)"
+];
+
 /** Shared parseArgs boolean option names for control surface */
 export const CONTROL_BOOLEAN_OPTIONS = [
   "plan",
@@ -20,7 +35,8 @@ export const CONTROL_BOOLEAN_OPTIONS = [
   "disable-web-search",
   "fork-session",
   "memory",
-  "no-memory"
+  "no-memory",
+  "sensitive-approved"
 ];
 
 /** Shared parseArgs value option names for control surface */
@@ -41,6 +57,7 @@ export const CONTROL_ARRAY_OPTIONS = ["allow", "deny"];
  * @param {Record<string, unknown>} raw
  */
 export function normalizeControlOptions(raw = {}) {
+  const sensitiveApproved = Boolean(raw.sensitiveApproved || raw["sensitive-approved"]);
   const out = {
     sandbox: null,
     permissionMode: null,
@@ -48,13 +65,23 @@ export function normalizeControlOptions(raw = {}) {
     memory: raw.memory === undefined ? null : raw.memory,
     noSubagents: Boolean(raw.noSubagents || raw["no-subagents"]),
     agent: raw.agent ? String(raw.agent).trim() : null,
-    allow: flattenStringList(raw.allow),
-    deny: flattenStringList(raw.deny),
-    disableWebSearch: Boolean(raw.disableWebSearch || raw["disable-web-search"]),
+    allow: [...SAFE_DEFAULT_ALLOW, ...flattenStringList(raw.allow)],
+    deny: [
+      ...(sensitiveApproved ? [] : SAFE_DEFAULT_DENY),
+      ...flattenStringList(raw.deny)
+    ],
+    disableWebSearch: true,
     forkSession: Boolean(raw.forkSession || raw["fork-session"]),
     maxTurns: raw.maxTurns != null ? Number(raw.maxTurns) : raw["max-turns"] != null ? Number(raw["max-turns"]) : null,
-    noPlan: Boolean(raw.noPlan || raw["no-plan"])
+    noPlan: Boolean(raw.noPlan || raw["no-plan"]),
+    sensitiveApproved
   };
+
+  // Secure worker defaults: project-scoped writes are automatic, everything else is denied.
+  if (!out.sandbox) out.sandbox = "workspace";
+  if (!out.planMode && !out.permissionMode) out.permissionMode = "dontAsk";
+  if (out.memory == null) out.memory = false;
+  out.noSubagents = true;
 
   if (raw.sandbox != null && raw.sandbox !== false && raw.sandbox !== "") {
     let s = String(raw.sandbox).trim().toLowerCase();
@@ -79,6 +106,13 @@ export function normalizeControlOptions(raw = {}) {
       );
     }
     out.permissionMode = pm;
+  }
+
+  if (["bypassPermissions", "default", "auto"].includes(out.permissionMode)) {
+    throw new Error("Grok Safe forbids bypass/default/auto permission modes; use dontAsk or plan.");
+  }
+  if (!out.sandbox || out.sandbox === "devbox") {
+    throw new Error("Grok Safe requires the workspace, strict, or read-only sandbox.");
   }
 
   if (out.planMode && !out.permissionMode) {
@@ -122,6 +156,7 @@ export function controlToGrokFields(control) {
     forkSession: control.forkSession,
     maxTurns: control.maxTurns,
     noPlan: control.noPlan,
+    sensitiveApproved: Boolean(control.sensitiveApproved),
     memory: control.memory == null ? null : { enable: Boolean(control.memory) }
   };
 }
@@ -150,6 +185,7 @@ export function controlFromParsedOptions(options = {}) {
     forkSession: options["fork-session"],
     maxTurns: options["max-turns"],
     noPlan: options["no-plan"]
+    ,sensitiveApproved: options["sensitive-approved"]
   });
 }
 
@@ -177,6 +213,7 @@ export function controlToJobConfig(control, extras = {}) {
     documentType: extras.documentType ?? null,
     workflowName: extras.workflowName ?? null,
     babysitAction: extras.babysitAction ?? null
+    ,sensitiveApproved: Boolean(control.sensitiveApproved)
   };
 }
 

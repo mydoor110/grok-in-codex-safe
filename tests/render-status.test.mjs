@@ -8,7 +8,7 @@ import {
   renderStatusReport,
   renderStoredJobResult,
   renderTaskResult
-} from "../plugins/grok/scripts/lib/render.mjs";
+} from "../plugins/grok-safe/scripts/lib/render.mjs";
 
 test("renderStatusReport single job shows usage postPending artifacts", () => {
   const text = renderStatusReport(

@@ -1,8 +1,13 @@
-# Grok plugin for Codex
+# Grok Safe for Codex
 
-Use [Grok](https://grok.com) from inside Codex for code reviews, delegated coding, planning, multi-agent workflows, design→execute pipelines, PR babysitting, and image/video/document generation.
+Use [Grok](https://grok.com) as a Codex-supervised implementation worker. Codex remains the primary agent, delegates bounded tasks, and independently reviews Grok's changes.
 
-**Plugin version:** 0.5.8. Codex stays the orchestrator. A thin MCP server + companion script hands real work to Grok on your machine via the local CLI (Grok Build ≥ **0.2.118** recommended).
+**Plugin version:** 0.5.8-safe.1, based on upstream 0.5.8. A thin MCP server + companion script hands work to the local Grok Build CLI (≥ **0.2.118** recommended).
+
+Routine project edits do not interrupt the user. They run in a Git worktree with fail-closed
+permissions. Sensitive files, project-external paths, package installation, remote mutations,
+infrastructure tools, and broader permissions must be escalated by Codex for explicit user approval.
+See [SECURITY.md](SECURITY.md).
 
 Artifact dirs (gitignored): `.grok-plans/`, `.grok-designs/`, `.grok-workflows/`, `.grok-docs/`, `.grok-reviews/`, `.grok-media/`.
 
@@ -45,26 +50,19 @@ Typical CLI location: `~/.grok/bin/grok` (ensure it is on `PATH`).
 
 ## Install
 
-From GitHub:
+From this local fork:
 
 ```bash
-codex plugin marketplace add stdevMac/grok-in-codex
-codex plugin add grok@grok-in-codex
+codex plugin marketplace add D:/存放/王萌博/code/grok-in-codex-safe/.agents/plugins
+codex plugin add grok-safe@grok-safe-local
 ```
 
 Then start a new Codex thread so the plugin skills and MCP tools are loaded.
 
-### Install locally
-
-```bash
-codex plugin marketplace add /path/to/grok-in-codex/.agents/plugins
-codex plugin add grok@grok-in-codex
-```
-
 Run setup:
 
 ```bash
-node plugins/grok/scripts/grok-companion.mjs setup
+node plugins/grok-safe/scripts/grok-companion.mjs setup
 ```
 
 Or ask Codex to call `grok_setup`.
@@ -131,7 +129,10 @@ For multi-PR or ambiguous product work, prefer:
 
 ## CLI posture
 
-- Prefer **denylist** (`--disallowed-tools`) over tools allowlist.
+- Write tasks use `dontAsk` with explicit safe allow rules inside the `workspace` sandbox.
+- `--yolo` and bypass-permissions are forbidden.
+- Web search, Grok memory, and Grok subagents are disabled by default.
+- Codex must inspect the complete diff and run verification after every write task.
 - Media: no yolo / no tools allowlist.
 - `dryRun` / `validateOnly` / babysit `list`: **read-only** (no yolo).
 
@@ -179,13 +180,13 @@ Default state root when unset: `~/.grok/codex-plugin/state/`. Codex does **not**
 
 ```bash
 npm test
-node plugins/grok/scripts/grok-companion.mjs setup --json
-node plugins/grok/mcp/server.mjs   # stdio NDJSON MCP server
+node plugins/grok-safe/scripts/grok-companion.mjs setup --json
+node plugins/grok-safe/mcp/server.mjs   # stdio NDJSON MCP server
 ```
 
 ## Versioning
 
-Root `package.json`, `plugins/grok/.codex-plugin/plugin.json`, and `.agents/plugins/marketplace.json` (metadata + plugin entry) share the same version string. Bump them together.
+Root `package.json`, `plugins/grok-safe/.codex-plugin/plugin.json`, and `.agents/plugins/marketplace.json` (metadata + plugin entry) share the same version string. Bump them together.
 
 ## License
 

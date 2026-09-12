@@ -5,7 +5,7 @@ import {
   extractUsageFromParsed,
   extractUsageFromStdout,
   formatUsageSummary
-} from "../plugins/grok/scripts/lib/usage.mjs";
+} from "../plugins/grok-safe/scripts/lib/usage.mjs";
 
 test("extractUsageFromParsed reads headless json spend fields", () => {
   const usage = extractUsageFromParsed({

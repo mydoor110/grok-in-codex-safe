@@ -5,8 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { buildGrokArgs, parseGrokJsonOutput, runGrok } from "../plugins/grok/scripts/lib/grok.mjs";
-import { extractUsageFromParsed } from "../plugins/grok/scripts/lib/usage.mjs";
+import { buildGrokArgs, parseGrokJsonOutput, runGrok } from "../plugins/grok-safe/scripts/lib/grok.mjs";
+import { extractUsageFromParsed } from "../plugins/grok-safe/scripts/lib/usage.mjs";
 
 const MOCK = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -16,12 +16,14 @@ const MOCK = path.resolve(
 test("mock GROK_BINARY finish path returns usage and text", () => {
   const prev = process.env.GROK_BINARY;
   // grok.mjs resolveGrokBinary checks GROK_BINARY file existence — use node wrapper
-  const wrapper = path.join(os.tmpdir(), `mock-grok-bin-${Date.now()}`);
-  fs.writeFileSync(
-    wrapper,
-    `#!/usr/bin/env bash\nexec node ${JSON.stringify(MOCK)} "$@"\n`,
-    { mode: 0o755 }
+  const wrapper = path.join(
+    os.tmpdir(),
+    `mock-grok-bin-${Date.now()}${process.platform === "win32" ? ".cmd" : ""}`
   );
+  const wrapperBody = process.platform === "win32"
+    ? `@"${process.execPath}" "${MOCK}" %*\r\n`
+    : `#!/usr/bin/env bash\nexec "${process.execPath}" ${JSON.stringify(MOCK)} "$@"\n`;
+  fs.writeFileSync(wrapper, wrapperBody, { mode: 0o755 });
   process.env.GROK_BINARY = wrapper;
   try {
     const result = runGrok({

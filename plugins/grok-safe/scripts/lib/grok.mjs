@@ -25,12 +25,14 @@ export function resolveGrokBinary() {
     return envPath;
   }
 
-  const which = runCommand("which", ["grok"]);
+  const locator = process.platform === "win32" ? "where.exe" : "which";
+  const executableName = process.platform === "win32" ? "grok.exe" : "grok";
+  const which = runCommand(locator, [executableName]);
   if (which.status === 0 && which.stdout.trim()) {
     return which.stdout.trim();
   }
 
-  const homeCandidate = path.join(os.homedir(), ".grok", "bin", "grok");
+  const homeCandidate = path.join(os.homedir(), ".grok", "bin", executableName);
   if (fs.existsSync(homeCandidate)) {
     return homeCandidate;
   }
@@ -220,10 +222,8 @@ export function buildGrokArgs(options = {}) {
   } else if (options.media) {
     args.push("--disallowed-tools", options.mediaDisallowedTools ?? MEDIA_DISALLOWED_TOOLS);
   } else if (options.write && !isPlanMode) {
-    // Full coding agent: default toolset + auto-approve.
-    if (options.yolo !== false) {
-      args.push("--yolo");
-    }
+    // Grok Safe never enables bypass-permissions. dontAsk + explicit allow rules
+    // lets Codex authorize routine project work while all other actions fail closed.
   } else if (!options.write || isPlanMode) {
     // Read-only review / diagnosis / plan mode: strip shell + source editors.
     // Plan mode still allows plan.md via Grok's plan-mode policy.
