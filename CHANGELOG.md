@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.8-safe.1 — independent derivative of grok-in-codex 0.5.8
+
+This tree is **not** grok-in-codex. It starts from
+[stdevMac/grok-in-codex](https://github.com/stdevMac/grok-in-codex) **v0.5.8**
+(Apache-2.0) and adds Codex-supervised execution, fail-closed permissions,
+acceptance/verification, Grok CLI 1.0 task support, and related tests/docs.
+
+See [README.md](README.md#origin-and-attribution) and [NOTICE](NOTICE).
+
 ## Unreleased — verified delivery
 
 - Add deterministic code-task acceptance, real verification receipts, structured incomplete results and workspace evidence.

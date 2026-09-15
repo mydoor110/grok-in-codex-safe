@@ -1,8 +1,11 @@
 # Grok Safe for Codex
 
+> Independent, unofficial derivative of [stdevMac/grok-in-codex](https://github.com/stdevMac/grok-in-codex) **v0.5.8** (Apache-2.0).  
+> 本仓库是 grok-in-codex 的独立非官方衍生版本，不是原作者发布或维护的项目。详见 [Origin and attribution](#origin-and-attribution)。
+
 Use [Grok](https://grok.com) as a Codex-supervised implementation worker. Codex remains the primary agent, delegates bounded tasks, and independently reviews Grok's changes.
 
-**Plugin version:** 0.5.8-safe.1, based on upstream 0.5.8. A thin MCP server + companion script hands work to the local Grok Build CLI (≥ **0.2.118** recommended).
+**Plugin version:** 0.5.8-safe.1, based on [grok-in-codex](https://github.com/stdevMac/grok-in-codex) 0.5.8. A thin MCP server + companion script hands work to the local Grok Build CLI (≥ **0.2.118** recommended).
 
 Routine project edits do not interrupt the user. They run in a Git worktree with fail-closed
 permissions. Sensitive files, project-external paths, package installation, remote mutations,
@@ -11,7 +14,7 @@ See [SECURITY.md](SECURITY.md).
 
 Artifact dirs (gitignored): `.grok-plans/`, `.grok-designs/`, `.grok-workflows/`, `.grok-docs/`, `.grok-reviews/`, `.grok-media/`.
 
-Using Claude Code instead? Use the sibling plugin: [grok-in-claude](https://github.com/stdevMac/grok-in-claude).
+The original author's Claude Code plugin is [grok-in-claude](https://github.com/stdevMac/grok-in-claude). That project is unrelated to this derivative.
 
 ## Verified code delivery
 
@@ -63,10 +66,17 @@ Typical CLI location: `~/.grok/bin/grok` (ensure it is on `PATH`).
 
 ## Install
 
-From this local fork:
+From GitHub (this derivative, not the original plugin):
 
 ```bash
-codex plugin marketplace add D:/存放/王萌博/code/grok-in-codex-safe/.agents/plugins
+codex plugin marketplace add mydoor110/grok-in-codex-safe
+codex plugin add grok-safe@grok-safe-local
+```
+
+From a local checkout:
+
+```bash
+codex plugin marketplace add /path/to/grok-in-codex-safe/.agents/plugins
 codex plugin add grok-safe@grok-safe-local
 ```
 
@@ -201,9 +211,46 @@ node plugins/grok-safe/mcp/server.mjs   # stdio NDJSON MCP server
 
 Root `package.json`, `plugins/grok-safe/.codex-plugin/plugin.json`, and `.agents/plugins/marketplace.json` (metadata + plugin entry) share the same version string. Bump them together.
 
+## Origin and attribution
+
+本仓库是 [stdevMac/grok-in-codex](https://github.com/stdevMac/grok-in-codex) **v0.5.8** 的独立衍生作品，不是 GitHub 上的官方 fork，也未经原作者或 xAI 背书。原作版权仍归原作者；本仓库只对这里列出的修改负责。
+
+This repository is an **independent derivative** of [stdevMac/grok-in-codex](https://github.com/stdevMac/grok-in-codex) **v0.5.8**, originally written by Marcos Maceo ([stdevMac](https://github.com/stdevMac)). It keeps the Apache-2.0 license. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+| | |
+| --- | --- |
+| Original project | https://github.com/stdevMac/grok-in-codex |
+| Original version | 0.5.8 (`8f76451`) |
+| Original author | Marcos Maceo / [stdevMac](https://github.com/stdevMac) |
+| Original license | Apache-2.0 |
+| This repository | https://github.com/mydoor110/grok-in-codex-safe |
+| This version | 0.5.8-safe.1 |
+
+Issues and support belong here, not at the original project. Modifications may diverge from upstream and are provided **AS IS**.
+
+### What we changed relative to grok-in-codex 0.5.8
+
+相对上游 v0.5.8，本仓库改动如下。未列出的 MCP 能力（plan / review / design / media / docs 等）仍基于原作。
+
+| Area | Change |
+| --- | --- |
+| Plugin identity | Renamed plugin `grok` → `grok-safe`; package `grok-in-codex-safe`; version `0.5.8-safe.1`. This is a separate plugin id, not a drop-in replacement of `grok@grok-in-codex`. |
+| Default permissions | Fail-closed: `workspace` sandbox, `dontAsk`, no `--yolo` / bypass-permissions. Web search, Grok memory, and Grok subagents are off by default. |
+| Sensitive access | Filename/content classification, per-file approval, deny-type precedence. Approving a secret no longer drops the command denylist. |
+| Child environment | Unrelated cloud and GitHub tokens are stripped. File arguments must stay inside the active Git repository. |
+| Delivery contract | Callers pass `acceptance` JSON. Process exit is not treated as task completion. Results include verification receipts; unmet contracts return `incomplete`. |
+| Isolation | Plugin-managed Git worktrees, resume/retain/cleanup, and cross-process workspace locks. Dirty source is not copied silently into a new worktree. |
+| Supervision | ACP preflight, runtime budgets, event wait / steer / interrupt, watchdog, and supervisor hooks. Codex must review the full diff after write tasks. |
+| Grok CLI 1.0 | Task execution path for Grok CLI 1.0, including `task --acceptance`. |
+| Installed CLI | `grok_capabilities`, `grok_cli_help`, and `grok_cli_update` read the local binary instead of assuming a fixed command surface. |
+| Tests | Added acceptance, security, supervisor, reliability, watchdog, and ACP-client coverage. |
+| Docs | Added [SECURITY.md](SECURITY.md), [verified-delivery](docs/verified-delivery.md), [reliability](docs/reliability-and-supervision.md), and [CLI updates](docs/cli-updates-and-coordination.md). |
+
+Local commits on top of v0.5.8: `dca81b1` (harden as Codex-supervised worker), `2ceaaf3` (plugin cache version), `9eb0269` (Grok CLI 1.0), `02f2eda` (tests and reliability).
+
 ## License
 
-Apache-2.0
+Apache-2.0. This is a derivative work of grok-in-codex; copyright notices for the original work and these modifications are in [NOTICE](NOTICE).
 
 ### 实时协作与 CLI 更新
 

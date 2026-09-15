@@ -1,0 +1,21 @@
+grok-in-codex-safe
+==================
+
+This product is an independent derivative of grok-in-codex
+(https://github.com/stdevMac/grok-in-codex).
+
+Original work:
+  grok-in-codex 0.5.8
+  Copyright 2026 Marcos Maceo (stdevMac)
+  https://github.com/stdevMac
+  Licensed under the Apache License, Version 2.0
+
+Modifications in this repository:
+  grok-in-codex-safe 0.5.8-safe.1
+  Copyright 2026 the grok-in-codex-safe contributors
+  https://github.com/mydoor110/grok-in-codex-safe
+
+This repository is not published, maintained, or endorsed by the original
+authors of grok-in-codex. It is not affiliated with xAI.
+
+See README.md for the list of modifications relative to grok-in-codex 0.5.8.

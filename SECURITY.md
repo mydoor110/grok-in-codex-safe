@@ -1,6 +1,6 @@
 # Grok Safe security model
 
-This local fork makes Codex the supervisor and Grok the implementation worker.
+This independent derivative of [stdevMac/grok-in-codex](https://github.com/stdevMac/grok-in-codex) v0.5.8 makes Codex the supervisor and Grok the implementation worker. It is not an official grok-in-codex release.
 
 ## Default behavior
 

@@ -1,13 +1,13 @@
 {
   "name": "grok-safe",
   "version": "0.5.8-safe.1+codex.20260913073153",
-  "description": "Codex-supervised Grok worker with project-scoped writes and fail-closed permissions.",
+  "description": "Independent derivative of stdevMac/grok-in-codex 0.5.8: Codex-supervised Grok worker with fail-closed permissions.",
   "author": {
-    "name": "stdevMac",
-    "url": "https://github.com/stdevMac"
+    "name": "mydoor110 (independent derivative of stdevMac/grok-in-codex)",
+    "url": "https://github.com/mydoor110/grok-in-codex-safe"
   },
-  "homepage": "https://github.com/stdevMac/grok-in-codex",
-  "repository": "https://github.com/stdevMac/grok-in-codex",
+  "homepage": "https://github.com/mydoor110/grok-in-codex-safe",
+  "repository": "https://github.com/mydoor110/grok-in-codex-safe",
   "license": "Apache-2.0",
   "keywords": [
     "grok",
@@ -24,15 +24,15 @@
   "interface": {
     "displayName": "Grok Safe",
     "shortDescription": "Codex-supervised Grok execution inside project boundaries",
-    "longDescription": "Use Grok as a write-capable worker while Codex remains the orchestrator and reviewer. Routine project edits are automatic; sensitive files, remote effects, and elevated permissions require user approval.",
-    "developerName": "Local fork of stdevMac",
+    "longDescription": "Independent derivative of stdevMac/grok-in-codex 0.5.8. Use Grok as a write-capable worker while Codex remains the orchestrator and reviewer. Routine project edits are automatic; sensitive files, remote effects, and elevated permissions require user approval.",
+    "developerName": "Independent derivative of stdevMac/grok-in-codex",
     "category": "Developer Tools",
     "capabilities": [
       "Interactive",
       "Read",
       "Write"
     ],
-    "websiteURL": "https://github.com/stdevMac/grok-in-codex",
+    "websiteURL": "https://github.com/mydoor110/grok-in-codex-safe",
     "defaultPrompt": [
       "Delegate this implementation to Grok and review its diff",
       "Ask Grok for a second implementation in a worktree",

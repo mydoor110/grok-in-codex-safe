@@ -2,7 +2,7 @@
   "name": "grok-in-codex-safe",
   "version": "0.5.8-safe.1",
   "private": true,
-  "description": "Codex plugin for orchestrating Grok Build (rescue, plan, design, workflows, reviews, media, docs)",
+  "description": "Independent Apache-2.0 derivative of stdevMac/grok-in-codex 0.5.8: Codex-supervised Grok worker with fail-closed permissions",
   "type": "module",
   "engines": {
     "node": ">=18.18"
@@ -15,11 +15,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/stdevMac/grok-in-codex.git"
+    "url": "git+https://github.com/mydoor110/grok-in-codex-safe.git"
   },
   "bugs": {
-    "url": "https://github.com/stdevMac/grok-in-codex/issues"
+    "url": "https://github.com/mydoor110/grok-in-codex-safe/issues"
   },
-  "homepage": "https://github.com/stdevMac/grok-in-codex#readme",
+  "homepage": "https://github.com/mydoor110/grok-in-codex-safe#readme",
   "license": "Apache-2.0"
 }
