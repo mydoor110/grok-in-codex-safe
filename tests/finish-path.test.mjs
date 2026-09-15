@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -27,6 +28,7 @@ test("mock GROK_BINARY finish path returns usage and text", () => {
   process.env.GROK_BINARY = wrapper;
   try {
     const result = runGrok({
+      runCommandFn: (_binary, args, options) => spawnSync(process.execPath, [MOCK, ...args], { ...options, encoding: "utf8" }),
       prompt: "hello",
       write: false,
       cwd: process.cwd()

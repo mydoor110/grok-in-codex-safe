@@ -1,3 +1,5 @@
+export const SAFE_SANDBOX_VALUES = ["workspace", "read-only", "strict"];
+export const SAFE_PERMISSION_VALUES = ["dontAsk", "plan", "acceptEdits"];
 const SANDBOX = new Set(["off", "workspace", "read-only", "strict", "devbox"]);
 const SANDBOX_ALIAS = new Map([
   ["ro", "read-only"],
@@ -67,10 +69,10 @@ export function normalizeControlOptions(raw = {}) {
     agent: raw.agent ? String(raw.agent).trim() : null,
     allow: [...SAFE_DEFAULT_ALLOW, ...flattenStringList(raw.allow)],
     deny: [
-      ...(sensitiveApproved ? [] : SAFE_DEFAULT_DENY),
+      ...SAFE_DEFAULT_DENY,
       ...flattenStringList(raw.deny)
     ],
-    disableWebSearch: true,
+    disableWebSearch: raw.disableWebSearch ?? true,
     forkSession: Boolean(raw.forkSession || raw["fork-session"]),
     maxTurns: raw.maxTurns != null ? Number(raw.maxTurns) : raw["max-turns"] != null ? Number(raw["max-turns"]) : null,
     noPlan: Boolean(raw.noPlan || raw["no-plan"]),
@@ -81,7 +83,7 @@ export function normalizeControlOptions(raw = {}) {
   if (!out.sandbox) out.sandbox = "workspace";
   if (!out.planMode && !out.permissionMode) out.permissionMode = "dontAsk";
   if (out.memory == null) out.memory = false;
-  out.noSubagents = true;
+  out.noSubagents = raw.noSubagents ?? raw["no-subagents"] ?? true;
 
   if (raw.sandbox != null && raw.sandbox !== false && raw.sandbox !== "") {
     let s = String(raw.sandbox).trim().toLowerCase();
@@ -108,10 +110,10 @@ export function normalizeControlOptions(raw = {}) {
     out.permissionMode = pm;
   }
 
-  if (["bypassPermissions", "default", "auto"].includes(out.permissionMode)) {
+  if (!SAFE_PERMISSION_VALUES.includes(out.permissionMode) && out.permissionMode !== null) {
     throw new Error("Grok Safe forbids bypass/default/auto permission modes; use dontAsk or plan.");
   }
-  if (!out.sandbox || out.sandbox === "devbox") {
+  if (!SAFE_SANDBOX_VALUES.includes(out.sandbox)) {
     throw new Error("Grok Safe requires the workspace, strict, or read-only sandbox.");
   }
 

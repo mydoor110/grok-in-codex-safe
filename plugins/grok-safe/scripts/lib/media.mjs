@@ -67,7 +67,7 @@ export function encodeGrokSessionWorkspaceKeys(cwd) {
 }
 
 export function resolveGrokSessionsRoot() {
-  return path.join(os.homedir(), ".grok", "sessions");
+  return path.join(process.env.GROK_HOME || path.join(os.homedir(), ".grok"), "sessions");
 }
 
 export function resolveGrokSessionDir(cwd, sessionId) {

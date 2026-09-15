@@ -1,3 +1,4 @@
+function errorText(value) { return value && typeof value === "object" ? `${value.code || "ERROR"}: ${value.message || ""}` : value; }
 import { preferPlanArtifactText, primaryArtifacts } from "./artifacts.mjs";
 
 function escapeCell(value) {
@@ -240,9 +241,9 @@ export function renderTaskResult(payload) {
   lines.push("");
   lines.push("## Output");
   lines.push("");
-  lines.push(payload.text || payload.error || "(empty)");
+  lines.push(payload.text || errorText(payload.error) || "(empty)");
   if (payload.error && payload.text) {
-    lines.push("", "## Error", "", payload.error);
+    lines.push("", "## Error", "", errorText(payload.error));
   }
   lines.push("");
   lines.push("## Follow-ups");
@@ -321,7 +322,7 @@ export function renderStatusReport(jobs, options = {}) {
       lines.push(`- **Summary**: ${job.summary}`);
     }
     if (job.error) {
-      lines.push(`- **Error**: ${job.error}`);
+      lines.push(`- **Error**: ${errorText(job.error)}`);
     }
     if (job.usage) {
       const u = job.usage;
@@ -468,7 +469,7 @@ export function renderTransferReport(payload) {
     }
   }
   if (payload.error) {
-    lines.push("", `**Error:** ${payload.error}`);
+    lines.push("", `**Error:** ${errorText(payload.error)}`);
   }
   lines.push("");
   return lines.join("\n");

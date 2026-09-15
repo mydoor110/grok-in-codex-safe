@@ -20,7 +20,7 @@ test("encodeGrokSessionWorkspaceKey percent-encodes slashes", () => {
 
 test("resolveGrokSessionDir nests under ~/.grok/sessions", () => {
   const dir = resolveGrokSessionDir("/tmp/ws", "sess-abc");
-  assert.ok(dir.includes(path.join(".grok", "sessions")));
+  assert.ok(dir.startsWith(path.join(process.env.GROK_HOME || path.join(os.homedir(), ".grok"), "sessions")));
   assert.ok(dir.endsWith(path.join(encodeURIComponent(path.resolve("/tmp/ws")), "sess-abc")));
 });
 

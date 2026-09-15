@@ -6,10 +6,25 @@ import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import {
+  SENSITIVE_TYPES,
   enforceInvocationSecurity,
   resolveGitWorkspace,
   sanitizedEnvironment
 } from "./security.mjs";
+
+import { ACCEPTANCE_SCHEMA } from "../scripts/lib/acceptance.mjs";
+import { SAFE_SANDBOX_VALUES, SAFE_PERMISSION_VALUES } from "../scripts/lib/control.mjs";
+
+import { CliCatalog } from "../scripts/lib/cli-catalog.mjs";
+import { GrokSupervisor } from "../scripts/lib/supervisor.mjs";
+import { readJobFile } from "../scripts/lib/jobs.mjs";
+import { RUNTIME_SCHEMA } from "../scripts/lib/job-policy.mjs";
+let liveSupervisor;
+let mcpInitialized = false;
+const cliCatalog = new CliCatalog({ isBusy: () => liveSupervisor?.isBusy() || false, beforeUpdate: () => liveSupervisor?.closeIdle(),
+  onChange: () => { if (mcpInitialized) sendMessage({ jsonrpc: "2.0", method: "notifications/tools/list_changed" }); } });
+function supervisor() { return liveSupervisor ||= new GrokSupervisor({ catalog: cliCatalog }); }
+const mcpAbortControllers = new Map();
 
 const SERVER_VERSION = "0.5.8-safe.1";
 const ROOT_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -23,12 +38,20 @@ const WORKSPACE_PROPERTY = {
     "Workspace or repository path for this call. Pass the active Codex project path when the plugin runs from its install cache."
   )
 };
+const OUTPUT_PROPERTIES = {
+  detail: { type: "string", enum: ["summary", "full"], description: "ACP defaults to compact supervision evidence. full includes raw events and complete stored output for inspection." },
+  cursor: { type: "integer", minimum: 0, description: "Last returned event cursor; reuse to avoid replay." }
+};
 
 /** Shared control surface for long-running Grok jobs (mirrors Claude companion flags). */
 const CONTROL_PROPERTIES = {
-  sandbox: stringSchema("Grok sandbox profile (e.g. read-only, workspace-write)."),
+  sensitiveExclude: { type: "array", items: { type: "string" }, description: "Exclude known dependency/cache directories only." },
+  sensitiveAllowTypes: { type: "array", items: { type: "string", enum: ["public-certificate", "test-fixture"] } },
+  sensitiveDenyTypes: { type: "array", items: { type: "string", enum: SENSITIVE_TYPES } },
+  sensitiveApprovedPaths: { type: "array", items: { type: "string" }, description: "Exact repository-relative paths explicitly approved by the user. Denied types still block." },
+  sandbox: { type: "string", enum: SAFE_SANDBOX_VALUES, description: "Grok Safe sandbox profile." },
   planMode: booleanSchema("Enable Grok plan mode (--plan)."),
-  permissionMode: stringSchema("Permission mode passed to Grok."),
+  permissionMode: { type: "string", enum: SAFE_PERMISSION_VALUES, description: "Grok Safe permission mode." },
   agent: stringSchema("Grok agent name to use."),
   noSubagents: booleanSchema("Disable Grok subagents."),
   memory: booleanSchema("Enable memory for this session."),
@@ -52,6 +75,9 @@ const CONTROL_PROPERTIES = {
 };
 
 const COMMON_JOB_PROPERTIES = {
+  transport: { type: "string", enum: ["acp", "headless"], description: "ACP provides live controls and push progress; headless is the compatibility path." },
+  runtime: RUNTIME_SCHEMA,
+  acceptance: ACCEPTANCE_SCHEMA,
   ...WORKSPACE_PROPERTY,
   background: booleanSchema("Start a background job and return the job id."),
   model: stringSchema("Grok model id or alias, such as fast or deep."),
@@ -61,6 +87,15 @@ const COMMON_JOB_PROPERTIES = {
 };
 
 const TOOL_DEFINITIONS = [
+  { name: 'grok_wait_many', description: 'Wait for any of 1-8 jobs to need attention, then return compact snapshots for all. Reuse each returned cursor.', inputSchema: { type: 'object', required: ['targets'], properties: { ...WORKSPACE_PROPERTY, targets: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'object', required: ['jobId'], properties: { jobId: { type: 'string' }, cursor: { type: 'integer', minimum: 0 } } } }, timeoutMs: { type: 'integer', minimum: 0, maximum: 60000 } } } },
+  { name: 'grok_retry_verification', description: 'Retry deterministic acceptance on a stopped job without asking Grok to implement again. Preserves artifacts and requires Codex review.', inputSchema: { type: 'object', required: ['jobId'], properties: { ...WORKSPACE_PROPERTY, jobId: { type: 'string' } } } },
+  { name: "grok_capabilities", description: "Discover the installed CLI version, available commands, flags and update policy from the actual binary.", inputSchema: { type: "object", properties: { ...WORKSPACE_PROPERTY, refresh: { type: "boolean" } } } },
+  { name: "grok_cli_help", description: "Read version-matched native CLI help. Use an advertised command path such as agent stdio or update.", inputSchema: { type: "object", properties: { command: { type: "string" }, ...WORKSPACE_PROPERTY } } },
+  { name: "grok_cli_update", description: "Check CLI releases, install stable updates while idle, or configure background checks. auto-stable installs only when no Grok job is active.", inputSchema: { type: "object", properties: { ...WORKSPACE_PROPERTY, action: { type: "string", enum: ["check", "install", "configure"] }, mode: { type: "string", enum: ["off", "check", "auto-stable"] }, intervalMinutes: { type: "integer", minimum: 5, maximum: 1440 } } } },
+  { name: "grok_send", description: "Send an idempotent update to a running Grok task: steer at the next native tool boundary, interrupt promptly, or queue for the next prompt. Returns a receipt; wait/events expose delivery acknowledgments.", inputSchema: { type: "object", required: ["jobId", "text"], properties: { ...WORKSPACE_PROPERTY, jobId: { type: "string" }, text: { type: "string" }, delivery: { type: "string", enum: ["steer", "interrupt", "queue"] }, messageId: { type: "string" } } } },
+  ...["grok_wait", "grok_events"].map(name => ({ name, description: "Read incremental supervision events. Default waits ignore routine text/thought/tool telemetry; failures and control events wake immediately. Use detail=full for raw diagnostics and always reuse cursor.", inputSchema: { type: "object", required: ["jobId"], properties: { ...WORKSPACE_PROPERTY, ...OUTPUT_PROPERTIES, jobId: { type: "string" }, timeoutMs: { type: "integer", minimum: 0, maximum: 60000 } } } })),
+  { name: "grok_session_config", description: "Change a connected session model or reasoning effort using the native ACP configuration interface.", inputSchema: { type: "object", required: ["jobId", "configId", "value"], properties: { ...WORKSPACE_PROPERTY, jobId: { type: "string" }, configId: { type: "string", enum: ["model", "reasoning_effort"] }, value: { type: "string" } } } },
+  { name: "grok_run", description: "General supervised Grok CLI task for implementation, planning, documents, media or workflows. Use exact artifact requirements for non-code deliverables; all kinds share live messaging, budgets, recovery and verification.", inputSchema: { type: "object", required: ["prompt"], properties: { ...COMMON_JOB_PROPERTIES, prompt: { type: "string" }, kind: { type: "string", enum: ["task", "plan", "review", "design", "workflow", "document", "image", "video"] }, readOnly: { type: "boolean" }, worktree: { type: "boolean" }, resumeSession: { type: "string" } } } },
   {
     name: "grok_setup",
     description:
@@ -76,6 +111,11 @@ const TOOL_DEFINITIONS = [
       }
     }
   },
+  ...["list_worktrees", "cleanup_worktree", "retain_worktree"].map(name => ({
+    name, description: "Inspect or manage plugin-owned worktrees. Cleanup refuses dirty, retained, active or unmerged worktrees.",
+    inputSchema: { type: "object", properties: { ...WORKSPACE_PROPERTY, jobId: { type: "string" } },
+      ...(name === "list_worktrees" ? {} : { required: ["jobId"] }) }
+  })),
   {
     name: "grok_rescue",
     description: "Codex-supervised Grok worker. Writes inside a Git worktree without user prompts; Codex must review the diff before applying it.",
@@ -92,7 +132,8 @@ const TOOL_DEFINITIONS = [
         worktree: booleanSchema("Run edits in a Grok-managed git worktree."),
         worktreeName: stringSchema("Name for a Grok-managed git worktree."),
         worktreeRef: stringSchema("Base ref for the Grok worktree."),
-        check: booleanSchema("Ask Grok to verify its own work before returning."),
+        check: booleanSchema("Run plugin-side delivery checks (defaults to true)."),
+        acceptance: ACCEPTANCE_SCHEMA,
         bestOfN: integerSchema("Run N parallel attempts of the same task and keep the best."),
         verbatim: booleanSchema("Avoid adding extra wrapper instructions to the prompt."),
         ...COMMON_JOB_PROPERTIES
@@ -299,6 +340,7 @@ const TOOL_DEFINITIONS = [
       properties: {
         ...WORKSPACE_PROPERTY,
         jobId: stringSchema("Specific job id to inspect."),
+        ...OUTPUT_PROPERTIES,
         all: booleanSchema("Include older jobs, not only the recent default window."),
         json: booleanSchema("Return machine-readable JSON from the companion.")
       }
@@ -313,6 +355,7 @@ const TOOL_DEFINITIONS = [
       properties: {
         ...WORKSPACE_PROPERTY,
         jobId: stringSchema("Specific job id. Omit only when there is one unambiguous recent job."),
+        ...OUTPUT_PROPERTIES,
         json: booleanSchema("Return machine-readable JSON from the companion.")
       }
     }
@@ -453,6 +496,15 @@ export function buildCompanionInvocation(toolName, input = {}) {
   let command;
 
   switch (toolName) {
+    case "list_worktrees":
+    case "cleanup_worktree":
+    case "retain_worktree":
+      args.push("worktrees", toolName === "list_worktrees" ? "list" : toolName === "cleanup_worktree" ? "cleanup" : "retain");
+      if (toolName !== "list_worktrees") {
+        if (!input.jobId || !/^[A-Za-z0-9_-]+$/.test(input.jobId)) throw new Error("A valid jobId is required");
+        args.push(input.jobId);
+      }
+      break;
     case "grok_setup":
       command = "setup";
       args.push(command);
@@ -477,10 +529,11 @@ export function buildCompanionInvocation(toolName, input = {}) {
       if (input.worktreeName) {
         pushValue(args, input.worktreeName, "--worktree-name");
       } else {
-        pushFlag(args, input.worktree, "--worktree");
+        if (input.worktree !== undefined) args.push(input.worktree ? "--worktree" : "--worktree=false");
       }
       pushValue(args, input.worktreeRef, "--worktree-ref");
-      pushFlag(args, input.check, "--check");
+      if (input.check !== undefined) args.push(input.check ? "--check" : "--check=false");
+      if (input.acceptance !== undefined) pushValue(args, JSON.stringify(input.acceptance), "--acceptance");
       pushValue(args, input.bestOfN, "--best-of-n");
       pushFlag(args, input.verbatim, "--verbatim");
       appendControlArgs(args, input);
@@ -645,7 +698,31 @@ export function buildCompanionInvocation(toolName, input = {}) {
   return { command, args };
 }
 
-export function runCompanion(toolName, input = {}) {
+export async function runCompanion(toolName, input = {}, context = {}) {
+  const content = value => ({ isError: ["failed", "incomplete", "blocked"].includes(value?.status), structuredContent: value, content: [{ type: "text", text: JSON.stringify(value) }] });
+  if (toolName === 'grok_wait_many') return content(await supervisor().waitMany(resolveMcpCwd(input), input.targets, input.timeoutMs ?? 60000, context.signal));
+  if (toolName === 'grok_retry_verification') return content(await supervisor().retryVerification(resolveMcpCwd(input), input.jobId));
+  if (toolName === "grok_capabilities") {
+    const catalog = await cliCatalog.refresh(Boolean(input.refresh));
+    let protocol;
+    try { protocol = await cliCatalog.protocolCapabilities(); } catch (error) { protocol = { available: false, error: error.message }; }
+    return content({ version: catalog.version, capturedAt: catalog.capturedAt, acp: catalog.acp, protocol, commands: Object.keys(catalog.pages), addedCommands: catalog.addedCommands, removedCommands: catalog.removedCommands, updatePolicy: cliCatalog.policy, lastUpdate: cliCatalog.lastUpdate || null });
+  }
+  if (toolName === "grok_cli_help") return content(await cliCatalog.help(input.command || ""));
+  if (toolName === "grok_cli_update") return content(input.action === "configure" ? cliCatalog.configure(input) : await cliCatalog.checkUpdate({ install: input.action === "install" }));
+  if (["grok_send", "grok_wait", "grok_events", "grok_session_config", "grok_run"].includes(toolName) || (toolName === "grok_rescue" && input.transport !== "headless")) {
+    const cwd = resolveMcpCwd(input), runtime = supervisor();
+    if (toolName === "grok_send") return content(await runtime.send(cwd, input.jobId, input));
+    if (toolName === "grok_session_config") return content(await runtime.configure(cwd, input.jobId, input.configId, input.value));
+    if (["grok_wait", "grok_events"].includes(toolName)) return content(await runtime.wait(cwd, input.jobId, input.cursor || 0, toolName === "grok_events" ? 0 : input.timeoutMs ?? 60000, context.signal, input.detail));
+    enforceInvocationSecurity("grok_rescue", { ...input, contentScoped: true }, cwd);
+    return content(await runtime.start(cwd, input, { kind: input.kind || "task", onProgress: context.onProgress, signal: context.signal }));
+  }
+  if (["grok_cancel", "grok_status", "grok_result"].includes(toolName) && input.jobId) {
+    const cwd = resolveMcpCwd(input);
+    if (liveSupervisor?.find(cwd, input.jobId)) return content(toolName === "grok_cancel" ? liveSupervisor.cancel(cwd, input.jobId) : await liveSupervisor.wait(cwd, input.jobId, input.cursor || 0, 0, context.signal, input.detail));
+    if (toolName !== "grok_cancel" && readJobFile(cwd, input.jobId)?.transport === "acp") return content(await supervisor().wait(cwd, input.jobId, input.cursor || 0, 0, context.signal, input.detail));
+  }
   const { args } = buildCompanionInvocation(toolName, input);
   const cwd = resolveMcpCwd(input);
   enforceInvocationSecurity(toolName, input, cwd);
@@ -708,8 +785,8 @@ async function handleRequest(message) {
           jsonrpc: "2.0",
           id,
           result: {
-            protocolVersion: message.params?.protocolVersion || "2024-11-05",
-            capabilities: { tools: {} },
+            protocolVersion: ['2024-11-05', '2025-03-26', '2025-06-18'].includes(message.params?.protocolVersion) ? message.params.protocolVersion : '2025-06-18',
+            capabilities: { tools: { listChanged: true } },
             serverInfo: { name: "grok-safe", version: SERVER_VERSION }
           }
         };
@@ -718,11 +795,19 @@ async function handleRequest(message) {
       case "tools/call": {
         const name = message.params?.name;
         const input = message.params?.arguments || {};
-        const result = await runCompanion(name, input);
+        const abort = new AbortController(); mcpAbortControllers.set(id, abort);
+        const token = message.params?._meta?.progressToken;
+        let progress = 0;
+        let result;
+        try { result = await runCompanion(name, input, { signal: abort.signal, onProgress: token === undefined ? undefined : event => sendMessage({ method: "notifications/progress", params: { progressToken: token, progress: ++progress, message: JSON.stringify(event) } }) }); }
+        finally { mcpAbortControllers.delete(id); }
         return { jsonrpc: "2.0", id, result };
       }
       case "notifications/initialized":
+        mcpInitialized = true;
+        return null;
       case "notifications/cancelled":
+        mcpAbortControllers.get(message.params?.requestId)?.abort();
         return null;
       default:
         if (id === undefined || id === null) {
@@ -750,11 +835,13 @@ async function handleRequest(message) {
 }
 
 function startStdioServer() {
+  cliCatalog.startMonitor();
   const lines = readline.createInterface({
     input: process.stdin,
     crlfDelay: Infinity
   });
 
+  lines.on("close", () => { liveSupervisor?.close(); cliCatalog.close(); });
   lines.on("line", (line) => {
     if (line.trim().length === 0) {
       return;

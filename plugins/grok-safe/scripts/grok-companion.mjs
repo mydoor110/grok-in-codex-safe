@@ -6,6 +6,8 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { deliveryArtifactPaths, normalizeAcceptance, snapshotWorkspace, verifyDelivery } from "./lib/acceptance.mjs";
+import { prepareExecutionWorkspace, cleanupExecutionWorkspace } from "./lib/execution-workspace.mjs";
 import { expandArgv, parseArgs } from "./lib/args.mjs";
 import {
   collectDesignArtifacts,
@@ -18,6 +20,8 @@ import {
 } from "./lib/artifacts.mjs";
 import { parseBabysitInvocation, buildBabysitPrompt, babysitSupportsBackground } from "./lib/babysit.mjs";
 import {
+  SAFE_SANDBOX_VALUES,
+  SAFE_PERMISSION_VALUES,
   CONTROL_ARRAY_OPTIONS,
   CONTROL_BOOLEAN_OPTIONS,
   CONTROL_VALUE_OPTIONS,
@@ -69,7 +73,7 @@ import {
   extractArtifactPaths,
   resolveMediaOutputDir
 } from "./lib/media.mjs";
-import { readPidFile, runCommand, terminateProcessTree, writePidFile } from "./lib/process.mjs";
+import { isProcessRunning, readPidFile, runCommand, terminateProcessTree, writePidFile } from "./lib/process.mjs";
 import {
   renderBackgroundStarted,
   renderCancelReport,
@@ -114,13 +118,16 @@ function printUsage() {
       "Usage:",
       "  setup [--enable-review-gate|--disable-review-gate] [--json]",
       "  task [--background] [--read-only] [--resume-last|--resume-session <id>|--fresh]",
-      "       [--model <id|fast|deep>] [--effort <level>] [--worktree [name]] [--check]",
-      "       [--best-of-n <n>] [--sandbox <profile>] [--plan] [--permission-mode <mode>]",
+      "       [--model <id|fast|deep>] [--effort <level>] [--worktree[=false]] [--check[=false]]",
+      "       [--sandbox <profile>] [--plan] [--permission-mode <mode>]",
       "       [--agent <name>] [--no-subagents] [--memory|--no-memory]",
       "       [--allow RULE]... [--deny RULE]... [--disable-web-search] [--fork-session]",
       "       [--max-turns <n>] [prompt]",
       "  plan [--background] [--model <id>] [--effort <level>] [control flags...] [prompt]",
       "  task-resume-candidate [--json]",
+      "  task --acceptance <JSON> [--worktree=false] [--check=false] <prompt>",
+      "  worktrees list|cleanup <jobId>|retain <jobId>",
+      `  Safe sandbox: ${SAFE_SANDBOX_VALUES.join(" | ")}; permissions: ${SAFE_PERMISSION_VALUES.join(" | ")}`,
       "  review [--background] [--adversarial] [--post-pending] [--base <ref>]",
       "         [--scope auto|working-tree|branch] [--pr <number>] [--model <id>] [focus]",
       "  workflow list [--json]",
@@ -216,13 +223,19 @@ function writePromptFile(content) {
   return filePath;
 }
 
+function publicJob(job) {
+  if (!job) return job;
+  const { initialSnapshot, finalSnapshot, ...result } = job;
+  return result;
+}
+
 function enrichJob(cwd, job) {
   if (!job) {
     return job;
   }
   const progress = readJobProgress(cwd, job.id);
   const logTail = tailLog(job.logFile, 12);
-  return { ...job, progress, logTail };
+  return { ...publicJob(job), progress: job.status === "running" ? progress : job.progress || progress, logTail };
 }
 
 function resolveMediaArtifactsForJob(job, text, sessionId) {
@@ -271,13 +284,17 @@ function finalizeJob(cwd, job, grokResult, extras = {}) {
   const ok = grokResult.ok;
   const text = parsed?.text || (!ok ? parsed?.error || grokResult.stderr : "") || grokResult.stdout;
   const sessionId = parsed?.sessionId ?? null;
-  const status = ok ? "completed" : "failed";
   const finishedAt = nowIso();
   const review = extras.parseReview ? tryParseStructuredReview(text) : null;
   let artifacts =
     extras.artifacts ||
     harvestKindArtifacts(cwd, job, text, sessionId);
   artifacts = normalizeArtifactList(artifacts);
+  const delivery = verifyDelivery(job, ok, grokResult.status);
+  delivery.metrics = grokResult.metrics || null;
+  if (grokResult.watchdog) { delivery.status = "incomplete"; delivery.deliveryError = grokResult.watchdog; delivery.progress.phase = "incomplete"; }
+  const status = delivery.status;
+
 
   const usage =
     extractUsageFromParsed(parsed?.parsed || parsed) ||
@@ -325,20 +342,26 @@ function finalizeJob(cwd, job, grokResult, extras = {}) {
 
   const fullJob = {
     ...job,
-    schemaVersion: 3,
+    schemaVersion: 4,
+    ...delivery,
     status,
     finishedAt,
     updatedAt: finishedAt,
-    summary,
+    summary: delivery.deliveryError ? delivery.deliveryError.message : summary,
     resultText: text,
     review,
     artifacts,
     usage,
+    resolvedModel: parsed?.parsed?.model || Object.keys(parsed?.parsed?.modelUsage || {})[0] || null,
+    modelVersion: parsed?.parsed?.modelVersion || null,
+    activeSessionId: sessionId,
+    resumeMode: job.resume && sessionId !== job.resume ? "parent-session" : job.resumeMode || null,
+    originalSessionId: job.resume || null,
     postPending,
     wantPostPending: Boolean(jobForPost.wantPostPending),
     grokSessionId: sessionId,
     exitCode: grokResult.status,
-    error,
+    error: delivery.deliveryError?.code === "STALLED" ? delivery.deliveryError : (error ? { code: /max.?turn|maximum turns/i.test(error) ? "MAX_TURNS_REACHED" : "PROCESS_FAILED", message: error, phase: delivery.metrics?.phase || "inspecting", cause: null, recoverable: true } : delivery.deliveryError),
     stderr: grokResult.stderr || null
   };
 
@@ -351,7 +374,16 @@ function finalizeJob(cwd, job, grokResult, extras = {}) {
     exitCode: fullJob.exitCode,
     error: fullJob.error
   });
+  upsertJob(cwd, fullJob);
+  if (["incomplete", "failed"].includes(fullJob.status) && fullJob.workspaceMode === "managed-worktree" && fullJob.worktreeClean && fullJob.finalHead === fullJob.initialHead && !fullJob.resume) {
+    try {
+      cleanupExecutionWorkspace(fullJob, path.dirname(fullJob.logFile), listJobs(cwd).filter(j => j.id !== fullJob.id));
+      fullJob.worktreeCleaned = true;
+    } catch (error) { fullJob.cleanupDeferred = error.message; }
+  }
+  upsertJob(cwd, fullJob);
   writeJobFile(cwd, fullJob);
+  if (job.progressFile) fs.writeFileSync(job.progressFile, JSON.stringify(delivery.progress));
 
   if (
     sessionId &&
@@ -369,6 +401,37 @@ function finalizeJob(cwd, job, grokResult, extras = {}) {
 }
 
 function maybeFinalizeBackgroundJob(cwd, job) {
+  if (!job) return job;
+  job = readJobFile(cwd, job.id) || job;
+  if (!shouldAttemptBackgroundFinalize(job)) return enrichJob(cwd, job);
+  const lock = `${job.resultFile}.acceptance.lock`;
+  let fd;
+  try { fd = fs.openSync(lock, "wx"); }
+  catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    let owner = null;
+    try { owner = JSON.parse(fs.readFileSync(lock, "utf8")).pid; } catch {}
+    if ((owner && !isProcessRunning(owner)) || (!owner && Date.now() - fs.statSync(lock).mtimeMs > 60000)) {
+      // Do not replay possibly side-effecting verification after an interrupted
+      // finalizer. Preserve the workspace and let an explicit resume recover it.
+      job.status = "incomplete";
+      job.taskCompleted = false;
+      job.acceptancePassed = false;
+      job.error = { code: "ACCEPTANCE_INTERRUPTED", message: "Acceptance owner exited; resume the preserved job explicitly", phase: "verifying", recoverable: true };
+      job.progress = { phase: "incomplete", completedAt: nowIso(), verificationSummary: job.error.message };
+      writeJobFile(cwd, job); upsertJob(cwd, job);
+      return enrichJob(cwd, job);
+    }
+    return { ...enrichJob(cwd, job), progress: { phase: "verifying", message: "Acceptance is running" } };
+  }
+  try {
+    fs.writeFileSync(fd, JSON.stringify({ pid: process.pid }));
+    const latest = readJobFile(cwd, job.id) || job;
+    return finalizeBackgroundResult(cwd, latest);
+  } finally { fs.closeSync(fd); fs.unlinkSync(lock); }
+}
+
+function finalizeBackgroundResult(cwd, job) {
   // Reconcile when still running *or* reaper false-failed while result.json exists.
   if (!job || !shouldAttemptBackgroundFinalize(job)) {
     return enrichJob(cwd, job);
@@ -409,13 +472,17 @@ function maybeFinalizeBackgroundJob(cwd, job) {
   const ok = payload.exitCode === 0 && parsed.ok;
   const text = parsed.text || parsed.error || payload.stdout || "";
   const sessionId = parsed.sessionId ?? payload.sessionId ?? null;
-  const status = ok ? "completed" : "failed";
   const finishedAt = payload.finishedAt || nowIso();
   const review =
     job.kind === "review" || job.kind === "adversarial-review" || job.kind === "stop-gate"
       ? tryParseStructuredReview(text)
       : null;
   const artifacts = normalizeArtifactList(harvestKindArtifacts(cwd, job, text, sessionId));
+  const delivery = verifyDelivery(job, ok, payload.exitCode);
+  delivery.metrics = payload.metrics || null;
+  if (payload.watchdog) { delivery.status = "incomplete"; delivery.deliveryError = payload.watchdog; delivery.progress.phase = "incomplete"; }
+  const status = delivery.status;
+
   // Prefer plan.md body for plan jobs so /grok:result is useful after background.
   const resultText =
     job.kind === "plan" ? preferPlanArtifactText(text, artifacts) : text;
@@ -458,22 +525,28 @@ function maybeFinalizeBackgroundJob(cwd, job) {
 
   const fullJob = {
     ...job,
-    schemaVersion: 3,
+    schemaVersion: 4,
+    ...delivery,
     status,
     finishedAt,
     updatedAt: finishedAt,
-    summary: review
+    summary: delivery.deliveryError ? delivery.deliveryError.message : review
       ? `${review.verdict}: ${titleFromPrompt(review.summary, status)}`
       : titleFromPrompt(resultText, status),
     resultText,
     review,
     artifacts,
     usage,
+    resolvedModel: parsed?.parsed?.model || Object.keys(parsed?.parsed?.modelUsage || {})[0] || null,
+    modelVersion: parsed?.parsed?.modelVersion || null,
+    activeSessionId: sessionId,
+    resumeMode: job.resume && sessionId !== job.resume ? "parent-session" : job.resumeMode || null,
+    originalSessionId: job.resume || null,
     postPending,
     wantPostPending: Boolean(jobForPost.wantPostPending),
     grokSessionId: sessionId,
     exitCode: payload.exitCode,
-    error,
+    error: delivery.deliveryError?.code === "STALLED" ? delivery.deliveryError : (error ? { code: /max.?turn|maximum turns/i.test(error) ? "MAX_TURNS_REACHED" : "PROCESS_FAILED", message: error, phase: delivery.metrics?.phase || "inspecting", cause: null, recoverable: true } : delivery.deliveryError),
     stderr: payload.stderr || null,
     pendingResult: false
   };
@@ -487,7 +560,16 @@ function maybeFinalizeBackgroundJob(cwd, job) {
     exitCode: fullJob.exitCode,
     error: fullJob.error
   });
+  upsertJob(cwd, fullJob);
+  if (["incomplete", "failed"].includes(fullJob.status) && fullJob.workspaceMode === "managed-worktree" && fullJob.worktreeClean && fullJob.finalHead === fullJob.initialHead && !fullJob.resume) {
+    try {
+      cleanupExecutionWorkspace(fullJob, path.dirname(fullJob.logFile), listJobs(cwd).filter(j => j.id !== fullJob.id));
+      fullJob.worktreeCleaned = true;
+    } catch (error) { fullJob.cleanupDeferred = error.message; }
+  }
+  upsertJob(cwd, fullJob);
   writeJobFile(cwd, fullJob);
+  if (job.progressFile) fs.writeFileSync(job.progressFile, JSON.stringify(delivery.progress));
 
   if (
     sessionId &&
@@ -550,6 +632,12 @@ function createJobShell(cwd, { kind, title, prompt, write, model, effort, extras
 }
 
 function runOrBackground(cwd, job, grokOptions, { background, json, renderPayload }) {
+  if (job.write && !job.initialSnapshot) {
+    job.initialSnapshot = snapshotWorkspace(grokOptions.cwd || cwd, deliveryArtifactPaths(grokOptions.cwd || cwd, job.kind));
+    job.executionPath = grokOptions.cwd || cwd;
+    job.baseCommit = job.initialSnapshot.head;
+    writeJobFile(cwd, job);
+  }
   if (background) {
     const spawned = spawnGrokBackground({
       ...grokOptions,
@@ -588,7 +676,7 @@ function runOrBackground(cwd, job, grokOptions, { background, json, renderPayloa
     return null;
   }
 
-  const grokResult = runGrok(grokOptions);
+  const grokResult = runGrok({ ...grokOptions, resultFile: job.resultFile, logFile: job.logFile, progressFile: job.progressFile });
   const finished = finalizeJob(cwd, job, grokResult, renderPayload?.finalizeExtras || {});
   const payload = renderPayload?.build
     ? renderPayload.build(finished, grokResult)
@@ -607,7 +695,7 @@ function runOrBackground(cwd, job, grokOptions, { background, json, renderPayloa
         worktree: job.worktree,
         check: job.check
       };
-  outputResult(json ? payload : renderTaskResult(payload), Boolean(json));
+  outputResult(json ? publicJob(payload) : renderTaskResult(payload), Boolean(json));
   process.exitCode = finished.status === "completed" ? 0 : 1;
   return finished;
 }
@@ -728,6 +816,7 @@ async function commandTask(argv) {
       "best-of-n",
       "worktree-ref",
       "worktree-name",
+      "acceptance",
       "resume-session",
       ...CONTROL_VALUE_OPTIONS
     ],
@@ -756,8 +845,13 @@ async function commandTask(argv) {
   const effort = normalizeEffort(options.effort, modelAlias);
   const background = Boolean(options.background);
   const bestOfN = options["best-of-n"] ? Number(options["best-of-n"]) : null;
-  const worktree = options["worktree-name"] || true;
-  const check = true;
+  if (bestOfN != null && bestOfN !== 1) throw new Error("INVALID_WORKSPACE_OPTIONS: bestOfN requires separate supervised jobs");
+  let worktree = options.worktree ?? writeMode;
+  if (!writeMode && (options.worktree === true || options.acceptance)) throw new Error("INVALID_WORKSPACE_OPTIONS: read-only tasks do not accept worktree=true or write acceptance contracts");
+  let check = options.check ?? true;
+  if (options["worktree-name"]) throw new Error("INVALID_WORKSPACE_OPTIONS: named Grok worktrees are unsupported; use worktree=true for plugin-managed isolation");
+  if (writeMode && control.sandbox === "read-only") throw new Error("CAPABILITY_MISSING: write task requires a writable sandbox");
+  const acceptance = normalizeAcceptance(options.acceptance ? JSON.parse(options.acceptance) : {}, control);
 
   let resume = null;
   if (options.fresh) {
@@ -774,14 +868,27 @@ async function commandTask(argv) {
     }
   }
 
+  let previous = null;
+  if (resume) {
+    previous = listTaskSessions(cwd).find(s => s.sessionId === resume);
+    previous = previous?.jobId ? readJobFile(cwd, previous.jobId) : null;
+    if (!previous || previous.status === "running") throw new Error("RESUME_CONTEXT_LOST: original job is missing or still running");
+    if (options["worktree-ref"] || options["fork-session"] || options.acceptance || options.worktree !== undefined) throw new Error("Resume must preserve the original workspace and acceptance contract");
+    normalizeAcceptance(previous.acceptance || {}, control);
+    if (options.check !== undefined && options.check !== previous.check) throw new Error("Resume must preserve the original check policy");
+    worktree = previous.worktree;
+    check = previous.check;
+  }
   const jobConfig = controlToJobConfig(control, {
     bestOfN,
-    worktree: worktree || null,
+    worktree,
     worktreeRef: options["worktree-ref"] || null,
     check
   });
 
-  const supervisedPrompt = `You are a worker supervised by Codex. Work only inside the active Git worktree. Do not read files outside it. Do not access secrets, credentials, or .env files. Do not push, publish, open PRs, contact external services, change git hooks, or weaken security controls. Make the requested project changes, run only permitted local checks, and finish with a precise changed-files and verification report. Codex will independently review every diff before accepting it.\n\nTASK FROM CODEX:\n${prompt}`;
+  const supervisedPrompt = `Acceptance contract: ${JSON.stringify(previous?.acceptance || acceptance)}. Start with a minimal change after at most two inspection turns; then verify. Pure plans are not a deliverable.
+
+You are a worker supervised by Codex. Work only inside the active Git worktree. Do not read files outside it. Do not access secrets, credentials, or .env files. Do not push, publish, open PRs, contact external services, change git hooks, or weaken security controls. Make the requested project changes, run only permitted local checks, and finish with a precise changed-files and verification report. Codex will independently review every diff before accepting it.\n\nTASK FROM CODEX:\n${prompt}`;
 
   const job = createJobShell(cwd, {
     kind: "task",
@@ -792,6 +899,8 @@ async function commandTask(argv) {
     effort,
     extras: {
       resume,
+      acceptance,
+      requestedModel: modelAlias || null,
       bestOfN,
       worktree: Boolean(worktree),
       check,
@@ -799,18 +908,28 @@ async function commandTask(argv) {
     }
   });
 
+  try {
+  Object.assign(job, prepareExecutionWorkspace({ cwd, jobId: job.id, jobsDir: path.dirname(job.logFile), write: writeMode, worktree,
+    worktreeRef: options["worktree-ref"], previous, acceptance }));
+  } catch (error) {
+    job.status = "failed";
+    job.error = { code: error.message.startsWith("RESUME_CONTEXT_LOST") ? "RESUME_CONTEXT_LOST" : "WORKSPACE_SETUP_FAILED", message: error.message, phase: "inspecting" };
+    upsertJob(cwd, job);
+    writeJobFile(cwd, job);
+    throw error;
+  }
+  writeJobFile(cwd, job);
   let grokOptions = {
     promptFile: job.promptFile,
-    cwd,
+    cwd: job.executionPath,
     write: writeMode || control.permissionMode === "plan",
     model,
     effort,
     resume,
     maxTurns: options["max-turns"] ? Number(options["max-turns"]) : undefined,
     bestOfN,
-    check,
-    worktree,
-    worktreeRef: options["worktree-ref"],
+    check: false,
+    worktree: false,
     verbatim: Boolean(options.verbatim)
   };
   grokOptions = applyControlToGrokOptions(grokOptions, control);
@@ -820,6 +939,7 @@ async function commandTask(argv) {
     json: options.json,
     renderPayload: {
       build: (finished) => ({
+        ...finished,
         jobId: job.id,
         kind: "task",
         status: finished.status,
@@ -1767,10 +1887,44 @@ async function commandCancel(argv) {
     summary: fullJob.summary,
     error: fullJob.error
   });
+  upsertJob(cwd, fullJob);
+  if (["incomplete", "failed"].includes(fullJob.status) && fullJob.workspaceMode === "managed-worktree" && fullJob.worktreeClean && fullJob.finalHead === fullJob.initialHead && !fullJob.resume) {
+    try {
+      cleanupExecutionWorkspace(fullJob, path.dirname(fullJob.logFile), listJobs(cwd).filter(j => j.id !== fullJob.id));
+      fullJob.worktreeCleaned = true;
+    } catch (error) { fullJob.cleanupDeferred = error.message; }
+  }
+  upsertJob(cwd, fullJob);
   writeJobFile(cwd, fullJob);
+  if (job.progressFile) fs.writeFileSync(job.progressFile, JSON.stringify(delivery.progress));
 
   const payload = { jobId: job.id, cancelled: true, killed, pid };
   outputResult(options.json ? payload : renderCancelReport(job, killed), Boolean(options.json));
+}
+
+async function commandWorktrees(argv) {
+  const { options, positionals } = parseArgs(argv, { booleanOptions: ["json"] });
+  const cwd = resolveWorkspaceRoot(process.cwd());
+  const [action = "list", id] = positionals;
+  const jobs = listJobs(cwd).map(j => readJobFile(cwd, j.id) || j);
+  if (action === "list") {
+    outputResult({ worktrees: jobs.filter(j => j.workspaceMode === "managed-worktree").map(j => ({ jobId: j.id, path: j.executionPath, status: j.status, retained: Boolean(j.retained), exists: fs.existsSync(j.executionPath) })) }, true);
+    return;
+  }
+  if (!id || !["cleanup", "retain"].includes(action)) throw new Error("Usage: worktrees list | cleanup <jobId> | retain <jobId>");
+  const job = readJobFile(cwd, id);
+  if (!job) throw new Error("Unknown worktree job");
+  if (action === "retain") {
+    if (job.workspaceMode !== "managed-worktree") throw new Error("Only managed worktrees can be retained");
+    job.retained = true;
+    writeJobFile(cwd, job); upsertJob(cwd, job);
+    outputResult({ jobId: id, retained: true }, true);
+  } else {
+    const result = cleanupExecutionWorkspace(job, path.dirname(job.logFile), jobs);
+    job.worktreeCleaned = true;
+    writeJobFile(cwd, job); upsertJob(cwd, job);
+    outputResult(result, true);
+  }
 }
 
 async function main() {
@@ -1785,6 +1939,9 @@ async function main() {
 
   try {
     switch (command) {
+      case "worktrees":
+        await commandWorktrees(rest);
+        break;
       case "setup":
         await commandSetup(rest);
         break;
@@ -1848,7 +2005,11 @@ async function main() {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(message);
+    if (rest.includes("--json")) {
+      const code = message.match(/^([A-Z][A-Z_]+):/)?.[1] || "INVALID_REQUEST";
+      outputResult({ status: code === "CAPABILITY_MISSING" ? "blocked" : "failed", processExited: false, taskCompleted: false, acceptancePassed: false,
+        error: { code, message, phase: "inspecting", cause: null } }, true);
+    } else console.error(message);
     process.exitCode = 1;
   }
 }

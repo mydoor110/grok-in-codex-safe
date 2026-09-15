@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { matchesPath } from "../scripts/lib/acceptance.mjs";
+
+export const SENSITIVE_TYPES = ["private-key", "credential", "access-token", "connection-string", "personal-data", "public-certificate", "test-fixture", "unknown-secret-like"];
+export const SENSITIVE_EXCLUDED_DIRS = [".git", ".venv", "venv", "node_modules", "vendor", "dist", "build", "__pycache__", ".cache", ".grok-media"];
 
 const EXECUTION_TOOLS = new Set([
   "grok_rescue",
@@ -60,9 +64,9 @@ export function assertWorkspacePath(root, value, label) {
   }
 }
 
-function findSensitivePaths(root, limit = 12) {
+export function findSensitivePaths(root, options = {}, limit = 100) {
   const findings = [];
-  const ignored = new Set([".git", "node_modules", "vendor", "dist", "build", ".grok-media"]);
+  const ignored = new Set(SENSITIVE_EXCLUDED_DIRS);
   const walk = (dir) => {
     if (findings.length >= limit) return;
     let entries = [];
@@ -75,13 +79,25 @@ function findSensitivePaths(root, limit = 12) {
       if (findings.length >= limit) break;
       if (ignored.has(entry.name)) continue;
       const full = path.join(dir, entry.name);
+      const relative = path.relative(root, full).replace(/\\/g, "/");
+      // Exclusions are restricted to known generated/dependency directories. They
+      // cannot become a blanket bypass for source credentials.
+      if ((options.sensitiveExclude || []).some(g => matchesPath(relative, g) || matchesPath(`${relative}/`, g))) continue;
       if (entry.isDirectory()) {
         walk(full);
-      } else if (
-        SENSITIVE_NAME.test(entry.name) &&
-        !/(?:example|sample|template|dist)$/i.test(entry.name)
-      ) {
-        findings.push(path.relative(root, full));
+      } else if (SENSITIVE_NAME.test(entry.name)) {
+        let type = "credential";
+        // Never follow links while inspecting candidates, and bound reads.
+        let body = "";
+        if (entry.isFile() && fs.statSync(full).size <= 262144) body = fs.readFileSync(full, "utf8");
+        if (/-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----/.test(body)) type = "private-key";
+        else if (/(?:postgres(?:ql)?|mysql|mongodb|redis):\/\/[^\s:@]+:[^\s@]+@/i.test(body)) type = "connection-string";
+        else if (/(?:api[_-]?key|access[_-]?token|auth[_-]?token)\s*[=:]\s*["']?[A-Za-z0-9_/-]{20,}/i.test(body)) type = "access-token";
+        else if (/\b(?:ssn|social_security_number)\s*[=:]/i.test(body)) type = "personal-data";
+        else if (/-----BEGIN CERTIFICATE-----/.test(body) && /^\s*(?:-----BEGIN CERTIFICATE-----[A-Za-z0-9+/=\s]+-----END CERTIFICATE-----\s*)+$/.test(body)) type = "public-certificate";
+        else if (/(?:example|sample|template|dist)$/i.test(entry.name)) type = "test-fixture";
+        else if (/\.(?:key|pem|p12|pfx|keystore)$/i.test(entry.name)) type = "unknown-secret-like";
+        findings.push({ path: relative, type });
       }
     }
   };
@@ -98,6 +114,18 @@ export function enforceInvocationSecurity(toolName, input, root) {
   }
 
   if (!EXECUTION_TOOLS.has(toolName)) return;
+  for (const glob of input.sensitiveExclude || []) {
+    const first = String(glob).replace(/\\/g, "/").split("/")[0];
+    if (!SENSITIVE_EXCLUDED_DIRS.includes(first) || String(glob).split(/[\\/]/).includes("..")) {
+      throw new Error("sensitiveExclude may only select known dependency/cache directories");
+    }
+  }
+  for (const type of [...(input.sensitiveAllowTypes || []), ...(input.sensitiveDenyTypes || [])]) {
+    if (!SENSITIVE_TYPES.includes(type)) throw new Error(`Unknown sensitive type: ${type}`);
+  }
+  if ((input.sensitiveAllowTypes || []).some(t => !["public-certificate", "test-fixture"].includes(t))) {
+    throw new Error("Credentials require explicit per-file approval, not a category-wide allow");
+  }
   const requestedAllows = (input.allow || []).map(String);
   const elevatedAllow = requestedAllows.find((rule) =>
     /(?:^|\()\s*(?:\*|\*\*)\s*\)?$|git\s+push|\bgh\b|curl|wget|invoke-webrequest|remove-item|rm\s+-rf|npm\s+(?:install|publish)|pnpm\s+add|yarn\s+add|pip\s+install|docker|kubectl|terraform|\baws\b|\baz\b|gcloud|ssh|scp/i.test(rule)
@@ -110,10 +138,14 @@ export function enforceInvocationSecurity(toolName, input, root) {
       throw new Error("Remote GitHub mutations require explicit user approval (sensitiveApproved=true).");
     }
   }
-  const sensitive = findSensitivePaths(root);
-  if (sensitive.length && !input.sensitiveApproved) {
+  const sensitive = (input.contentScoped ? [] : findSensitivePaths(root, input)).filter(f => {
+    if ((input.sensitiveDenyTypes || []).includes(f.type)) return true;
+    if (["public-certificate", "test-fixture", ...(input.sensitiveAllowTypes || [])].includes(f.type)) return false;
+    return !(input.sensitiveApprovedPaths || []).includes(f.path) && !input.sensitiveApproved;
+  });
+  if (sensitive.length) {
     throw new Error(
-      `Sensitive files detected; Codex must ask the user before delegating to Grok: ${sensitive.join(", ")}`
+      `Sensitive files detected; Codex must ask the user before delegating to Grok: ${sensitive.map(f => `${f.path} (${f.type})`).join(", ")}`
     );
   }
 }

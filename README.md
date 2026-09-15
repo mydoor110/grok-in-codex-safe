@@ -13,6 +13,19 @@ Artifact dirs (gitignored): `.grok-plans/`, `.grok-designs/`, `.grok-workflows/`
 
 Using Claude Code instead? Use the sibling plugin: [grok-in-claude](https://github.com/stdevMac/grok-in-claude).
 
+## Verified code delivery
+
+ACP reliability updates add installation/environment preflight, separate implementation/test/review
+states, verification-only retry, bounded multi-job waits and durable workspace ownership.
+See [reliability and supervision](docs/reliability-and-supervision.md) for exact behavior and limits.
+
+Code tasks now use plugin-side acceptance instead of treating a successful process exit as a completed task.
+Pass `acceptance` with exact paths, verification commands, commit and artifact requirements.
+See [the contract and issue-by-issue coverage](docs/verified-delivery.md) for examples, compatibility changes,
+and the remaining runner-dependent limitations. Explicit `worktree=false` is honored; resume reuses
+and validates the original workspace. `list_worktrees`, `retain_worktree`, and `cleanup_worktree`
+manage plugin-owned worktrees conservatively.
+
 ## What you get
 
 | Codex MCP tool | Purpose |
@@ -191,3 +204,9 @@ Root `package.json`, `plugins/grok-safe/.codex-plugin/plugin.json`, and `.agents
 ## License
 
 Apache-2.0
+
+### 实时协作与 CLI 更新
+
+默认 ACP 常驻会话支持增量事件、途中纠偏、中断和恢复。新增 `grok_capabilities`、
+`grok_cli_help`、`grok_cli_update` 从本机版本发现命令并检查稳定版更新。
+详见 [配置和边界](docs/cli-updates-and-coordination.md)。

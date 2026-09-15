@@ -61,3 +61,16 @@ test("environment sanitizer drops unrelated secrets", () => {
   assert.equal(env.GH_TOKEN, undefined);
   assert.equal(env.GROK_SAFE_SUPERVISED, "1");
 });
+
+test("dependency certificates are ignored; public certificates pass; private keys do not", () => {
+  const root = repo();
+  fs.mkdirSync(path.join(root, ".venv"));
+  fs.writeFileSync(path.join(root, ".venv", "bundle.key"), "dependency data");
+  fs.writeFileSync(path.join(root, "ca.pem"), "-----BEGIN CERTIFICATE-----\nYWJj\n-----END CERTIFICATE-----\n");
+  assert.doesNotThrow(() => enforceInvocationSecurity("grok_rescue", {}, root));
+  fs.writeFileSync(path.join(root, "private.pem"), "-----BEGIN PRIVATE KEY-----\nYWJj\n-----END PRIVATE KEY-----\n");
+  assert.throws(() => enforceInvocationSecurity("grok_rescue", {}, root), /private-key/);
+  assert.doesNotThrow(() => enforceInvocationSecurity("grok_rescue", { sensitiveApprovedPaths: ["private.pem"] }, root));
+  assert.throws(() => enforceInvocationSecurity("grok_rescue", { sensitiveApproved: true, sensitiveDenyTypes: ["private-key"] }, root), /private-key/);
+  assert.throws(() => enforceInvocationSecurity("grok_rescue", { sensitiveExclude: ["**"] }, root), /known dependency/);
+});

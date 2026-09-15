@@ -1,3 +1,5 @@
+import { normalizeGrokEvent } from "./events.mjs";
+import { createActionWatchdog } from "./watchdog.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -338,7 +340,7 @@ export function humanizeGrokFailure(sources = {}) {
       ) || compact.slice(0, 280);
 
   if (sources.exitCode != null && sources.exitCode !== 0) {
-    return `Grok failed (exit ${sources.exitCode}): ${firstUseful}`;
+    return /^Grok failed \(exit \d+\):/i.test(firstUseful) ? firstUseful : `Grok failed (exit ${sources.exitCode}): ${firstUseful}`;
   }
   return firstUseful;
 }
@@ -370,7 +372,8 @@ export function parseGrokJsonOutput(stdout) {
           };
         }
         return {
-          ok: true,
+          ok: !/max.?turn|error|failed|cancel/i.test(parsed.stopReason || ""),
+          error: /max.?turn/i.test(parsed.stopReason || "") ? "MAX_TURNS_REACHED" : null,
           text: typeof parsed.text === "string" ? parsed.text : "",
           sessionId: parsed.sessionId ?? null,
           stopReason: parsed.stopReason ?? null,
@@ -413,8 +416,19 @@ export function runGrok(options = {}) {
     throw new Error(availability.reason);
   }
 
+  if (options.resultFile && options.progressFile && !options.jsonSchema) {
+    const args = buildGrokArgs({ ...options, outputFormat: "streaming-json" });
+    const wrapper = buildGrokBackgroundWrapperSource({ binary: availability.binary, args, resultFile: options.resultFile,
+      logFile: options.logFile, progressFile: options.progressFile, cwd: options.cwd, streaming: true, watchWrites: Boolean(options.write) });
+    const runner = runCommand(process.execPath, ["-e", wrapper], { cwd: options.cwd, maxBuffer: 40 * 1024 * 1024 });
+    if (!fs.existsSync(options.resultFile)) return { ok: false, status: runner.status, stdout: "", stderr: runner.stderr, parsed: { error: "Runner exited without a result" } };
+    const payload = JSON.parse(fs.readFileSync(options.resultFile, "utf8"));
+    const parsed = parseGrokJsonOutput(payload.stdout || "");
+    return { binary: availability.binary, args, status: payload.exitCode, stdout: payload.stdout, stderr: payload.stderr,
+      parsed, ok: payload.exitCode === 0 && parsed.ok, metrics: payload.metrics, watchdog: payload.watchdog };
+  }
   const args = buildGrokArgs(options);
-  const result = runCommand(availability.binary, args, {
+  const result = (options.runCommandFn || runCommand)(availability.binary, args, {
     cwd: options.cwd,
     maxBuffer: options.maxBuffer ?? 40 * 1024 * 1024,
     env: {
@@ -493,12 +507,13 @@ export function buildGrokBackgroundWrapperSource({
   logFile = "",
   progressFile = "",
   cwd = process.cwd(),
-  streaming = false
+  streaming = false,
+  watchWrites = false
 }) {
   // Embed the same function the module exports (not a hand-maintained copy).
   const streamProgressHelper = getStreamProgressHelperSource();
   return `
-const { spawn } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const binary = ${JSON.stringify(binary)};
 const args = ${JSON.stringify(args)};
@@ -507,6 +522,17 @@ const logFile = ${JSON.stringify(logFile || "")};
 const progressFile = ${JSON.stringify(progressFile)};
 const cwd = ${JSON.stringify(cwd)};
 const streaming = ${JSON.stringify(streaming)};
+const watchWrites = ${JSON.stringify(watchWrites)};
+${createActionWatchdog.toString()}
+const actionWatchdog = createActionWatchdog();
+let metrics = actionWatchdog.observe({});
+let watchdog = null;
+function stopStalled(message) {
+  if (watchdog) return;
+  watchdog = { code: "STALLED", message, phase: metrics.phase, recoverable: true };
+  if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+  else { try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); } }
+}
 
 function append(line) {
   if (!logFile) return;
@@ -537,25 +563,49 @@ writeProgress({ phase: "starting", message: "Launching Grok", lines: 0 });
 const child = spawn(binary, args, {
   cwd,
   env: { ...process.env, RUST_LOG: process.env.RUST_LOG || "off" },
-  stdio: ["ignore", "pipe", "pipe"]
+  stdio: ["ignore", "pipe", "pipe"],
+  detached: process.platform !== "win32",
+  windowsHide: true
 });
 
+let lastChange = Date.now();
+let lastFingerprint = null;
+const idleTimer = watchWrites ? setInterval(() => {
+  const diff = spawnSync("git", ["diff", "HEAD"], { cwd, encoding: "utf8", windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
+  const status = spawnSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8", windowsHide: true });
+  if (diff.status !== 0 || status.status !== 0) return;
+  const fingerprint = require("node:crypto").createHash("sha256").update(diff.stdout + status.stdout).digest("hex");
+  if (fingerprint !== lastFingerprint) { lastChange = Date.now(); lastFingerprint = fingerprint; }
+  if (Date.now() - lastChange > 180000) stopStalled("No observable workspace change for 180 seconds");
+}, 5000) : null;
 let stdout = "";
 let stderr = "";
 let textAcc = "";
 let thoughtAcc = "";
 let sessionId = null;
+let streamMetadata = {};
+let streamError = null;
+let finalStopReason = null;
 let lineCount = 0;
 let lastMessage = "running";
 
 ${streamProgressHelper}
 
+${normalizeGrokEvent.toString()}
 function handleStreamLine(line) {
   lineCount += 1;
   const trimmed = line.trim();
   if (!trimmed) return;
   try {
-    const evt = JSON.parse(trimmed);
+    const raw = JSON.parse(trimmed);
+    const evt = normalizeGrokEvent(raw);
+    sessionId = raw.params?.sessionId || raw.sessionId || sessionId;
+    for (const key of ["usage", "modelUsage", "model", "modelVersion", "num_turns", "total_cost_usd"]) {
+      if (evt[key] !== undefined) streamMetadata[key] = evt[key];
+    }
+    metrics = actionWatchdog.observe(evt);
+    if (watchWrites && metrics.warning) append("Action watchdog: two narration-only turns; execution required");
+    if (watchWrites && metrics.stalled) stopStalled("Three narration-only turns without tool activity");
     if (evt.type === "text" && evt.data) {
       textAcc += evt.data;
       // Tail of accumulated text; floor empty so whitespace-only tokens keep "running"
@@ -566,9 +616,11 @@ function handleStreamLine(line) {
         formatStreamProgressMessage(thoughtAcc, { prefix: "thinking: " }) || "running";
     } else if (evt.type === "end") {
       sessionId = evt.sessionId || sessionId;
+      finalStopReason = evt.stopReason || null;
       lastMessage = "finishing";
     } else if (evt.type === "error") {
-      lastMessage = evt.message || "error";
+      streamError = evt.message || "Grok stream error";
+      lastMessage = streamError;
     }
     if (evt.sessionId) sessionId = evt.sessionId;
   } catch {
@@ -576,7 +628,8 @@ function handleStreamLine(line) {
   }
   if (lineCount % 3 === 0 || /end|error/i.test(trimmed)) {
     writeProgress({
-      phase: "running",
+      phase: metrics.phase,
+      metrics,
       message: lastMessage,
       lines: lineCount,
       sessionId
@@ -599,6 +652,7 @@ child.stdout.on("data", (chunk) => {
     }
   }
 });
+child.on("error", (error) => { stderr += error.message; });
 child.stderr.on("data", (chunk) => {
   const text = chunk.toString();
   stderr += text;
@@ -606,6 +660,8 @@ child.stderr.on("data", (chunk) => {
   writeProgress({ phase: "running", message: text.trim().slice(0, 120), lines: lineCount });
 });
 child.on("close", (code, signal) => {
+  if (idleTimer) clearInterval(idleTimer);
+  if (watchdog) code = 1;
   if (streaming && stdoutBuf.trim()) {
     handleStreamLine(stdoutBuf);
   }
@@ -614,8 +670,10 @@ child.on("close", (code, signal) => {
   if (streaming) {
     // Reconstruct a json-format-like payload for the companion parser.
     finalStdout = JSON.stringify({
+      ...streamMetadata,
       text: textAcc || stdout,
-      stopReason: code === 0 ? "EndTurn" : "Error",
+      ...(streamError ? { type: "error", message: streamError } : {}),
+      stopReason: finalStopReason || (code === 0 ? "EndTurn" : "Error"),
       sessionId,
       requestId: null
     });
@@ -624,6 +682,8 @@ child.on("close", (code, signal) => {
   const payload = {
     exitCode: code,
     signal,
+    metrics,
+    watchdog,
     stdout: finalStdout,
     stderr,
     finishedAt: new Date().toISOString(),
@@ -636,8 +696,8 @@ child.on("close", (code, signal) => {
     fs.writeFileSync(tmp, JSON.stringify(payload, null, 2) + "\\n");
     fs.renameSync(tmp, resultFile);
     writeProgress({
-      phase: code === 0 ? "completed" : "failed",
-      message: code === 0 ? "completed" : "failed with code " + code,
+      phase: code === 0 ? "verifying" : "failed",
+      message: code === 0 ? "Process exited; awaiting plugin acceptance" : "failed with code " + code,
       lines: lineCount,
       sessionId
     });
@@ -677,7 +737,8 @@ export function spawnGrokBackground(options = {}) {
     logFile: options.logFile || "",
     progressFile: options.progressFile || "",
     cwd: options.cwd || process.cwd(),
-    streaming: useStreaming
+    streaming: useStreaming,
+    watchWrites: Boolean(options.write)
   });
 
   const child = spawn(process.execPath, ["-e", wrapper], {

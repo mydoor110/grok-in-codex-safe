@@ -226,7 +226,8 @@ export function saveState(cwd, state) {
     },
     jobs: pruneJobs(state.jobs ?? [])
   };
-  fs.writeFileSync(resolveStateFile(cwd), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  const stateFile = resolveStateFile(cwd), temporary = `${stateFile}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(next)}\n`, "utf8"); fs.renameSync(temporary, stateFile);
   return next;
 }
 
@@ -255,6 +256,11 @@ export function generateJobId(prefix = "job") {
 }
 
 export function upsertJob(cwd, jobPatch) {
+  // Large fingerprints belong in the per-job evidence file, not the job index.
+  jobPatch = { ...jobPatch };
+  delete jobPatch.initialSnapshot;
+  delete jobPatch.finalSnapshot;
+  if (jobPatch.transport === 'acp') for (const key of ['prompt', 'checkpoint', 'environment', 'resultText', 'tests', 'commandReceipts', 'security', 'control']) delete jobPatch[key];
   return updateState(cwd, (state) => {
     const timestamp = nowIso();
     const index = state.jobs.findIndex((job) => job.id === jobPatch.id);
@@ -281,7 +287,9 @@ export function listJobs(cwd) {
 export function writeJobFile(cwd, job) {
   ensureStateDir(cwd);
   const filePath = resolveJobFile(cwd, job.id);
-  fs.writeFileSync(filePath, `${JSON.stringify(job, null, 2)}\n`, "utf8");
+  const temporary = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(job)}\n`, "utf8");
+  fs.renameSync(temporary, filePath);
   return filePath;
 }
 

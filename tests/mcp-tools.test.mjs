@@ -19,6 +19,9 @@ const SERVER_PATH = path.resolve(
 );
 
 const EXPECTED_TOOLS = [
+  'grok_wait_many', 'grok_retry_verification',
+  "grok_capabilities", "grok_cli_help", "grok_cli_update", "grok_send", "grok_wait", "grok_events", "grok_session_config", "grok_run",
+  "cleanup_worktree", "list_worktrees", "retain_worktree",
   "grok_adversarial_review",
   "grok_babysit",
   "grok_cancel",
@@ -47,7 +50,7 @@ function makeGitWorkspace(prefix) {
 
 test("listToolDefinitions exposes every Grok capability as a Codex tool", () => {
   const names = listToolDefinitions().map((tool) => tool.name).sort();
-  assert.deepEqual(names, EXPECTED_TOOLS);
+  assert.deepEqual(names, [...EXPECTED_TOOLS].sort());
 });
 
 test("depth tools for plan/workflow/design/execute/babysit/document/sessions are present", () => {

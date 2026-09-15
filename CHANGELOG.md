@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — verified delivery
+
+- Add deterministic code-task acceptance, real verification receipts, structured incomplete results and workspace evidence.
+- Honor explicit worktree/check settings; manage worktrees in the plugin, preserve resume context and provide safe lifecycle tools.
+- Add streaming action observation and a no-change timeout; preserve usage/model/error metadata across foreground/background execution.
+- Narrow sensitive scanning and add classification, per-file approval and deny precedence. Secret approval no longer drops command deny rules.
+- Add cross-platform regression coverage and isolate test state from the real Grok home.
+- See `docs/verified-delivery.md` for supported contracts, compatibility changes and open items.
+
 ## 0.5.8
 
 ### Fixed
@@ -78,3 +87,10 @@
 
 ### Added
 - Initial Codex MCP plugin: setup, rescue, review, adversarial review, image, video, status, result, cancel, transfer.
+
+## ACP supervision and native CLI discovery
+
+- Persistent ACP transport with native client hooks, live steer/interrupt/queue, incremental waits and same-session recovery.
+- Per-phase budgets and an independent acceptance worker keep MCP controls responsive during verification.
+- Discover version-matched CLI help and live models; check/install stable updates while idle and refresh the catalog after updates.
+- Verified against Grok 1.0.30 in temporary repositories: text, file edits, tool hooks, steering and interrupt continuation.
