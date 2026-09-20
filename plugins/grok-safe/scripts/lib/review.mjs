@@ -48,7 +48,8 @@ Return ONLY JSON matching the provided schema with:
 - findings[] with severity, title, body, file, optional line_start/line_end, recommendation
 - next_steps[]
 
-Order findings by severity (critical > high > medium > low).
+Order findings by severity (P0/critical > P1/high > P2/medium > risk/low).
+P0/critical is only for confirmed unrecoverable data loss or global unavailability with no bypass. Use Risk when impact is unproven.
 If there are no issues, return an empty findings array and a clear approve-style verdict.`;
 }
 
@@ -91,6 +92,21 @@ export function tryParseStructuredReview(text) {
   return null;
 }
 
+const SEVERITY_MAP = { p0: "critical", p1: "high", p2: "medium", risk: "low", critical: "critical", high: "high", medium: "medium", low: "low" };
+
+export function canonicalizeSeverity(raw, { body = "", recommendation = "" } = {}) {
+  const reported = String(raw || "low").trim().toLowerCase();
+  let severity = SEVERITY_MAP[reported] || "low";
+  const evidence = `${body} ${recommendation}`;
+  const hasP0Evidence = evidence.length > 80 && /unrecoverable|data loss|corrupt|global(?:ly)? unavailable|outage|no bypass|confirmed/i.test(evidence);
+  let severityAdjusted = false;
+  if ((reported === "p0" || reported === "critical") && !hasP0Evidence) {
+    severity = "high";
+    severityAdjusted = true;
+  }
+  return { severity, reportedSeverity: reported, severityAdjusted };
+}
+
 function normalizeReview(data) {
   const severityRank = { critical: 0, high: 1, medium: 2, low: 3 };
   const findings = data.findings.map((finding, index) => {
@@ -99,25 +115,29 @@ function normalizeReview(data) {
       Number.isInteger(source.line_start) && source.line_start > 0 ? source.line_start : null;
     const lineEnd =
       Number.isInteger(source.line_end) && source.line_end > 0 ? source.line_end : lineStart;
+    const body =
+      typeof source.body === "string" && source.body.trim()
+        ? source.body.trim()
+        : "No details provided.";
+    const recommendation =
+      typeof source.recommendation === "string" ? source.recommendation.trim() : "";
+    const ranked = canonicalizeSeverity(source.severity, { body, recommendation });
     return {
-      severity:
-        typeof source.severity === "string" && source.severity.trim()
-          ? source.severity.trim().toLowerCase()
-          : "low",
+      severity: ranked.severity,
+      reportedSeverity: ranked.reportedSeverity,
+      severityAdjusted: ranked.severityAdjusted,
       title:
         typeof source.title === "string" && source.title.trim()
           ? source.title.trim()
           : `Finding ${index + 1}`,
-      body:
-        typeof source.body === "string" && source.body.trim()
-          ? source.body.trim()
-          : "No details provided.",
+      body,
       file:
         typeof source.file === "string" && source.file.trim() ? source.file.trim() : "unknown",
       line_start: lineStart,
       line_end: lineEnd,
-      recommendation:
-        typeof source.recommendation === "string" ? source.recommendation.trim() : ""
+      recommendation: ranked.severityAdjusted
+        ? `${recommendation} [P0 rejected: no unrecoverable-data or global-outage evidence]`.trim()
+        : recommendation
     };
   });
 

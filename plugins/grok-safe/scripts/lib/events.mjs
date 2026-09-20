@@ -3,10 +3,22 @@ import { EventEmitter } from "node:events";
 import readline from 'node:readline';
 
 // Only suppress known routine telemetry. Unknown events and failures remain visible.
+// Heartbeats are supervision events so a long-running command can wake grok_wait.
 export function supervisionEvent(event) {
   if (event.error || ["failed", "error", "denied", "blocked", "cancelled"].includes(event.status) || (event.exitCode != null && event.exitCode !== 0)) return true;
+  if (event.type === "heartbeat") return true;
   return !["text", "thought", "hook", "usage", "tool_call", "tool_call_update", "tool-start"].includes(event.type)
     && !(event.type === "command-finished" && event.exitCode === 0);
+}
+
+function rememberImportant(store, event, maxEntries) {
+  if (!supervisionEvent(event)) return;
+  if (event.type === "heartbeat") {
+    const idx = store.important.findLastIndex(item => item.type === "heartbeat");
+    if (idx >= 0) store.important.splice(idx, 1);
+  }
+  store.important.push(event);
+  if (store.important.length > maxEntries) store.importantDroppedThrough = store.important.shift().revision;
 }
 
 export class JobEvents extends EventEmitter {
@@ -18,7 +30,7 @@ export class JobEvents extends EventEmitter {
       let event; try { event = JSON.parse(line); } catch { continue; }
       result.revision = Math.max(result.revision, event.revision || 0);
       result.entries.push({ ...event, replayed: true }); if (result.entries.length > maxEntries) result.entries.shift();
-      if (supervisionEvent(event)) { result.important.push({ ...event, replayed: true }); if (result.important.length > maxEntries) result.importantDroppedThrough = result.important.shift().revision; }
+      rememberImportant(result, { ...event, replayed: true }, maxEntries);
     }
     return result;
   }
@@ -29,19 +41,16 @@ export class JobEvents extends EventEmitter {
       const lines = fs.readFileSync(file, "utf8").trim().split("\n");
       for (const line of lines) { try { this.entries.push(JSON.parse(line)); } catch {} }
       this.revision = this.entries.at(-1)?.revision || 0;
-      this.important = this.entries.filter(supervisionEvent);
-      this.importantDroppedThrough = this.important.at(-maxEntries - 1)?.revision || 0;
-      this.important = this.important.slice(-maxEntries);
+      this.important = [];
+      this.importantDroppedThrough = 0;
+      for (const event of this.entries) rememberImportant(this, event, maxEntries);
       this.entries = this.entries.slice(-maxEntries);
     }
   }
   publish(type, data = {}) {
     const event = { ...data, revision: ++this.revision, type, timestamp: new Date().toISOString(), replayed: false };
     this.entries.push(event); if (this.entries.length > this.maxEntries) this.entries.shift();
-    if (supervisionEvent(event)) {
-      this.important.push(event);
-      if (this.important.length > this.maxEntries) this.importantDroppedThrough = this.important.shift().revision;
-    }
+    rememberImportant(this, event, this.maxEntries);
     if (this.file) {
       this.buffer ||= []; this.buffer.push(`${JSON.stringify(event)}\n`);
       if (!this.scheduled) this.scheduled = setImmediate(() => { this.scheduled = null; this.flush(); });

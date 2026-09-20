@@ -1,5 +1,5 @@
 import { normalizeGrokEvent } from "./events.mjs";
-import { createActionWatchdog } from "./watchdog.mjs";
+import { createActionWatchdog, writeWatchShouldStall } from "./watchdog.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -524,9 +524,11 @@ const cwd = ${JSON.stringify(cwd)};
 const streaming = ${JSON.stringify(streaming)};
 const watchWrites = ${JSON.stringify(watchWrites)};
 ${createActionWatchdog.toString()}
+${writeWatchShouldStall.toString()}
 const actionWatchdog = createActionWatchdog();
 let metrics = actionWatchdog.observe({});
 let watchdog = null;
+let activeTools = 0;
 function stopStalled(message) {
   if (watchdog) return;
   watchdog = { code: "STALLED", message, phase: metrics.phase, recoverable: true };
@@ -576,7 +578,7 @@ const idleTimer = watchWrites ? setInterval(() => {
   if (diff.status !== 0 || status.status !== 0) return;
   const fingerprint = require("node:crypto").createHash("sha256").update(diff.stdout + status.stdout).digest("hex");
   if (fingerprint !== lastFingerprint) { lastChange = Date.now(); lastFingerprint = fingerprint; }
-  if (Date.now() - lastChange > 180000) stopStalled("No observable workspace change for 180 seconds");
+  if (writeWatchShouldStall(lastChange, Date.now(), activeTools)) stopStalled("No observable workspace change or tool activity for 180 seconds");
 }, 5000) : null;
 let stdout = "";
 let stderr = "";
@@ -604,6 +606,11 @@ function handleStreamLine(line) {
       if (evt[key] !== undefined) streamMetadata[key] = evt[key];
     }
     metrics = actionWatchdog.observe(evt);
+    if (evt.type === "tool_call" || evt.type === "tool_use") { activeTools += 1; lastChange = Date.now(); }
+    if (evt.type === "tool_call_update") {
+      lastChange = Date.now();
+      if (["completed", "failed", "cancelled", "error"].includes(String(evt.status || ""))) activeTools = Math.max(0, activeTools - 1);
+    }
     if (watchWrites && metrics.warning) append("Action watchdog: two narration-only turns; execution required");
     if (watchWrites && metrics.stalled) stopStalled("Three narration-only turns without tool activity");
     if (evt.type === "text" && evt.data) {
@@ -631,6 +638,9 @@ function handleStreamLine(line) {
       phase: metrics.phase,
       metrics,
       message: lastMessage,
+      currentAction: activeTools ? "tool-running" : lastMessage,
+      lastActivityAt: new Date(lastChange).toISOString(),
+      activeTools,
       lines: lineCount,
       sessionId
     });

@@ -851,7 +851,7 @@ async function commandTask(argv) {
   let check = options.check ?? true;
   if (options["worktree-name"]) throw new Error("INVALID_WORKSPACE_OPTIONS: named Grok worktrees are unsupported; use worktree=true for plugin-managed isolation");
   if (writeMode && control.sandbox === "read-only") throw new Error("CAPABILITY_MISSING: write task requires a writable sandbox");
-  const acceptance = normalizeAcceptance(options.acceptance ? JSON.parse(options.acceptance) : {}, control);
+  const acceptance = normalizeAcceptance(options.acceptance ? JSON.parse(options.acceptance) : {}, control, { write: writeMode });
 
   let resume = null;
   if (options.fresh) {
@@ -874,7 +874,7 @@ async function commandTask(argv) {
     previous = previous?.jobId ? readJobFile(cwd, previous.jobId) : null;
     if (!previous || previous.status === "running") throw new Error("RESUME_CONTEXT_LOST: original job is missing or still running");
     if (options["worktree-ref"] || options["fork-session"] || options.acceptance || options.worktree !== undefined) throw new Error("Resume must preserve the original workspace and acceptance contract");
-    normalizeAcceptance(previous.acceptance || {}, control);
+    normalizeAcceptance(previous.acceptance || {}, previous.control || control);
     if (options.check !== undefined && options.check !== previous.check) throw new Error("Resume must preserve the original check policy");
     worktree = previous.worktree;
     check = previous.check;

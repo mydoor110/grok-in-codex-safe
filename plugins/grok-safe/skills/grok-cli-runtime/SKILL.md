@@ -93,9 +93,20 @@ successful and dirty worktrees are preserved. Use `list_worktrees`, `retain_work
 `cleanup_worktree(jobId)` for lifecycle management.
 
 Explicit turn events enable narration metrics and stall detection. Without those events, counters
-are not inferred from text chunks. The 180-second no-Git-change watchdog can also stop lengthy
-read-only exploration within write tasks: keep handoffs bounded. A watchdog warning is logged;
-the runtime does not inject system messages into a running Grok session.
+are not inferred from text chunks. Heartbeats are supervision events (phase, currentAction,
+lastActivityAt). The 180-second write watchdog stalls only when there is no active tool and no
+Git change. A watchdog warning is logged; the runtime does not inject system messages into a
+running Grok session.
+
+Default `acceptance.capabilities` are `read`, `edit`, and `test`. Add `buildImage` for local
+Docker compose/build, and `push`/`deploy` only with `sensitiveApproved=true` plus
+`publish.images` (immutable tag or digest; dirty publish requires `allowDirtyPublish`).
+`frozenTestGlobs` freeze oracle/test hashes; changes need `oracleChangeReasons` and are listed
+with diffs. Optional `preflight` checks only declared tools/env/ports/composeFiles — never
+hard-code a language or product. Optional `stage` + `requires` gate a pipeline across jobs.
+`cleanupPolicy` applies only to Docker resources created after the job's preflight snapshot.
+Delivery reports land in `artifacts/<jobId>/manifest.json` with SHA-256. Do not treat a raw
+failed-test count as independent product defects; read `testSummary` and `failureType`.
 
 ## Task (`grok_rescue`)
 
@@ -164,8 +175,8 @@ Use `transport=headless` on rescue only for compatibility; it does not provide n
 - Start with `background=true`; retain the job ID and cursor.
 - `grok_wait(jobId,cursor,timeoutMs=60000)` defaults to compact supervision events. Always reuse
   the returned cursor, including on `grok_status` and `grok_result`, to avoid replay. Routine
-  text/thought/tool telemetry stays on disk and does not wake Codex; failures, permission denials,
-  phase changes, watchdog warnings, acceptance retries and control receipts remain visible.
+  text/thought/tool telemetry stays on disk and does not wake Codex; heartbeats, failures, permission
+  denials, phase changes, watchdog warnings, acceptance retries and control receipts remain visible.
 - `detail=full` on wait/events/status/result retrieves raw events and complete stored output.
   Compact responses include `evidenceFile` and `eventsFile` for full local inspection; `gap=true`
   requires reading missed evidence from the event file before accepting the job. Successful test

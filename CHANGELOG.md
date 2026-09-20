@@ -11,6 +11,9 @@ See [README.md](README.md#origin-and-attribution) and [NOTICE](NOTICE).
 
 ## Unreleased — verified delivery
 
+- Add runtime heartbeats, capability ladder (`read|edit|test|buildImage|push|deploy`), failure taxonomy, frozen test globs, and a dirty-publish gate with immutable image tags.
+- Add generic contract preflight (declared tools/env/ports/compose mounts/disk), SHA-256 `artifacts/<jobId>/` manifests, oracle diffs with required reasons, optional stage gates, and snapshot-diff Docker cleanup.
+- Headless write watchdog no longer treats a long-running tool with no Git change as a stall.
 - Add deterministic code-task acceptance, real verification receipts, structured incomplete results and workspace evidence.
 - Honor explicit worktree/check settings; manage worktrees in the plugin, preserve resume context and provide safe lifecycle tools.
 - Add streaming action observation and a no-change timeout; preserve usage/model/error metadata across foreground/background execution.

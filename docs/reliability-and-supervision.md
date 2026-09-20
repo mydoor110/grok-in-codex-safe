@@ -22,6 +22,15 @@ reviewStatus 和 integrationStatus。模型说完成不是批准，reviewStatus 
 integrationStatus 保持 not-merged。验证基础设施故障保留工作区、结果及可取得的快照，
 不会自动让模型反复重写代码。
 
+运行时每 `heartbeatSeconds`（默认 15）发出 `heartbeat` 监管事件，包含 phase、
+currentAction、blockingReason、lastActivityAt 和是否 mutatesProduction。心跳会唤醒
+`grok_wait`；连续心跳在重要事件列表中折叠为一条。有活动工具或处于 verifying 时
+不因空闲判 STALLED。headless 180 秒看门狗同样要求「无工具且无 git 变化」。
+
+验收契约里的预检、阶段和清理都是通用字段：只检查调用方列出的工具名、环境变量、
+端口和 Compose 文件，不内置某个产品的 JDK/Maven/登录模式。Docker 清理只对比任务
+开始时的资源快照，结束时列出残留。最终报告在 `artifacts/<jobId>/`。
+
 `grok_retry_verification(cwd, jobId)` 对停止的任务单独重跑原有验收，保留验证历史，
 不调用 Grok、不修改验收条件、不自动审核或合入。它可能执行用户原先授权的测试命令。
 验证基础设施修复后再调用；不能把“重试成功”解释为 Codex 已审查全部改动。

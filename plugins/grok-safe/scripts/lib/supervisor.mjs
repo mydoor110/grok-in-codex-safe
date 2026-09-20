@@ -34,7 +34,7 @@ export function publicExecution(job, detail = "full") {
     referencedFields.push(key); result[key] = { reference: `${result.evidenceFile}#/${key}`, omitted: true };
   }
   if (JSON.stringify(result).length > 14000) {
-    for (const key of Object.keys(result)) if (!['id', 'jobId', 'status', 'implementationStatus', 'artifactStatus', 'testStatus', 'acceptancePassed', 'taskCompleted', 'reviewStatus', 'integrationStatus', 'evidenceFile', 'eventsFile', 'reviewRequired', 'infrastructureErrors'].includes(key)) {
+    for (const key of Object.keys(result)) if (!['id', 'jobId', 'status', 'implementationStatus', 'artifactStatus', 'testStatus', 'testSummary', 'acceptancePassed', 'taskCompleted', 'reviewStatus', 'integrationStatus', 'evidenceFile', 'eventsFile', 'reviewRequired', 'infrastructureErrors', 'images', 'productionChanged', 'remainingRisks', 'oracleChanged', 'capabilities', 'artifacts', 'cleanup', 'stage', 'stageResult'].includes(key)) {
       referencedFields.push(key); delete result[key];
     }
   }
@@ -66,7 +66,7 @@ export class GrokSupervisor {
     if ([...this.workers.values()].filter(w => !terminal(w.job)).length >= this.maxConcurrent) throw new Error('CONCURRENCY_LIMIT: wait for an active job before dispatching more work');
     if (!prompt?.trim()) throw new Error("A task prompt is required");
     const control = normalizeControlOptions(input), write = !input.readOnly && !input.planMode;
-    const acceptance = normalizeAcceptance(input.acceptance || {}, control), runtime = normalizeRuntime(input.runtime);
+    const acceptance = normalizeAcceptance(input.acceptance || {}, control, { write }), runtime = normalizeRuntime(input.runtime);
     // Validate the installed verifier and command environment before creating a worktree.
     const sourceEnvironment = this.preflight(cwd, acceptance, control, { checkWritable: write });
     if (input.bestOfN > 1) throw new Error("UNSUPPORTED_OPTION: independent attempts must be started as separate supervised jobs");
@@ -127,8 +127,14 @@ export class GrokSupervisor {
     worker.job.checkpoint = worker.policy.checkpoint(); worker.job.updatedAt = new Date().toISOString();
     worker.job.pendingMessages = worker.pendingMessages;
     writeJobFile(worker.job.workspaceRoot, worker.job); upsertJob(worker.job.workspaceRoot, worker.job);
+    const action = worker.policy.currentAction?.();
     fs.writeFileSync(worker.job.progressFile, JSON.stringify({ phase: worker.job.phase || worker.policy.phase, updatedAt: worker.job.updatedAt,
-      cursor: worker.events.revision, metrics: worker.policy.metrics }));
+      cursor: worker.events.revision, metrics: worker.policy.metrics,
+      currentAction: action?.action, blockingReason: action?.blocking,
+      lastActivityAt: worker.policy.lastActivity ? new Date(worker.policy.lastActivity).toISOString() : undefined,
+      activeTools: worker.policy.activeTools?.size || 0,
+      mutatesProduction: (worker.job.acceptance?.capabilities || []).some(name => name === "push" || name === "deploy")
+    }));
   }
   schedulePersist(worker) {
     if (!worker.persistTimer) worker.persistTimer = setTimeout(() => {

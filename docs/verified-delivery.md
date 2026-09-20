@@ -17,7 +17,9 @@
     "requireTests": true,
     "requiredCommands": ["npm test"],
     "requireCommit": false,
-    "requireCleanWorktree": false
+    "requireCleanWorktree": false,
+    "capabilities": ["read", "edit", "test"],
+    "frozenTestGlobs": ["tests/oracle.mjs"]
   }
 }
 ```
@@ -34,9 +36,24 @@
 `check=false` 仅关闭额外的未跟踪文件、diff 检查，不能关闭产物或显式契约验证。
 新建未跟踪源码必须由 `allowedPaths` 覆盖。路径匹配支持 `*` 和 `**`，相对仓库根目录。
 
+`capabilities` 默认 `read|edit|test`。`buildImage` 允许本地 `docker compose`/`docker build`，仍拒绝 `docker push`。`push`/`deploy` 必须 `sensitiveApproved=true`，并在 `publish.images` 中预览仓库与不可变标签（`latest` 必须另附 `immutableTag` 或 `digest`）。脏工作区默认不能发布，除非 `publish.allowDirtyPublish=true`。`frozenTestGlobs` 匹配到的测试/oracle 文件哈希变化会列入 `oracleChanged`（含 diff）；没有 `oracleChangeReasons[<path>]` 则验收失败。
+
+这些字段都是通用契约，不绑定具体语言或仓库。预检只检查调用方声明的内容：
+
+- `preflight.tools`：额外可执行文件名
+- `preflight.env`：必须非空的环境变量名
+- `preflight.ports`：必须空闲的端口
+- `preflight.composeFiles`：工作区相对 Compose 文件，解析其中的相对 bind mount
+- `preflight.diskMb`：最低空闲磁盘；`buildImage`/`push` 默认 256
+- `preflight.registry`：为 true 时要求已配置 Docker registry 凭证
+
+`stage` 为可选门控（`inspect|implement|verify|package|publish`）。`inspect` 默认不改代码；后一阶段用 `requires` 指向前一阶段的 `artifacts/<jobId>/delivery.json`（`status` 必须是 `completed` 或 `success`）。`cleanupPolicy` 只清理**本次任务相对预检快照新创建**的容器/网络/卷，镜像默认保留。最终报告写到 `artifacts/<jobId>/`，`manifest.json` 含 SHA-256。
+
 ## 结果与工作区
 
 - `processExited` 表示进程已退出；`taskCompleted`、`acceptancePassed` 由插件判定。
+- 测试结果含 `failureType`（`product|test_harness|environment|infrastructure|unknown`）和 `testSummary`（失败数、独立缺陷聚类、harness/环境计数）。自动分类是启发式，`unknown` 合法。
+- 发布结果含 `images[]`、`productionChanged`、`sourceCommit`、`sourceDirty`、`diffHash`、`remainingRisks`。
 - 正常退出但没有交付物或不满足契约时返回 `incomplete`，CLI 退出码非零。
 - 结果包含基线、初始和最终 HEAD、变更文件、未跟踪文件、工作区是否干净、
   提交列表与 merge commit、验证命令及真实退出码/时间/输出尾部。

@@ -2,9 +2,19 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { matchesPath } from "./acceptance.mjs";
+import { assertCommandCapability, commandCapability, effectiveCapabilities, mutatesProduction } from "./capabilities.mjs";
 
 export const RUNTIME_DEFAULTS = { maxNarrationOnlyTurns: 2, inspectionTurns: 4, editingTurns: 24, verificationTurns: 8,
-  inspectionSeconds: 600, editingSeconds: 1800, verificationSeconds: 600, maxRecoveryAttempts: 2, idleSeconds: 300 };
+  packagingTurns: 8, publishingTurns: 4,
+  inspectionSeconds: 600, editingSeconds: 1800, verificationSeconds: 600, packagingSeconds: 1800, publishingSeconds: 600,
+  maxRecoveryAttempts: 2, idleSeconds: 300, heartbeatSeconds: 15 };
+const PHASE_BUDGET = {
+  inspecting: { seconds: "inspectionSeconds", turns: "inspectionTurns" },
+  editing: { seconds: "editingSeconds", turns: "editingTurns" },
+  verifying: { seconds: "verificationSeconds", turns: "verificationTurns" },
+  packaging: { seconds: "packagingSeconds", turns: "packagingTurns" },
+  publishing: { seconds: "publishingSeconds", turns: "publishingTurns" }
+};
 export const RUNTIME_SCHEMA = { type: "object", additionalProperties: false, properties:
   Object.fromEntries(Object.keys(RUNTIME_DEFAULTS).map(key => [key, { type: "integer", minimum: 1, maximum: key.endsWith("Seconds") ? 86400 : 1000 }])) };
 export function normalizeRuntime(value = {}) {
@@ -51,19 +61,50 @@ export function commandAllowed(command, control) {
 export class JobPolicy {
   constructor(job, publish = () => {}) {
     this.job = job; this.publish = publish; this.runtime = normalizeRuntime(job.runtime);
-    this.phase = "inspecting"; this.phaseSince = Date.now(); this.lastActivity = Date.now();
+    this.phase = "inspecting"; this.phaseSince = Date.now(); this.lastActivity = Date.now(); this.lastHeartbeat = 0;
     this.metrics = { turns: null, actionTurns: null, narrationOnlyTurns: null, turnEventsObserved: false, operationsStarted: 0, operationsCompleted: 0, filesRead: 0, filesEdited: 0, readVersions: 0, duplicateReads: 0, cachedReadTokensAvoided: 0 };
-    this.phaseCounts = { inspecting: 0, editing: 0, verifying: 0 }; this.reads = new Map(); this.actions = 0; this.narration = 0;
+    this.phaseCounts = { inspecting: 0, editing: 0, verifying: 0, packaging: 0, publishing: 0 }; this.reads = new Map(); this.actions = 0; this.narration = 0;
     this.activeTools = new Map(); this.editedFiles = new Set(); this.warnings = new Set(); this.lastProgress = Date.now(); this.context = { confirmedFindings: [], todo: [], lastReport: "", lastFailure: null };
+  }
+  capabilities() { return effectiveCapabilities(this.job.acceptance, this.job.write !== false); }
+  currentAction() {
+    if (this.activeTools.size) {
+      const tool = [...this.activeTools.values()].at(-1);
+      return { action: tool.command || tool.name, blocking: tool.command ? "command-running" : "tool-running" };
+    }
+    if (this.phase === "verifying") return { action: "running verification", blocking: "verification" };
+    return { action: this.phase, blocking: "model-turn" };
+  }
+  progressSnapshot() {
+    const todo = this.context.todo || [];
+    if (!todo.length) return undefined;
+    return { completed: todo.filter(item => item.status === "completed" || item.status === "done").length, total: todo.length };
+  }
+  heartbeatEvent() {
+    const current = this.currentAction();
+    const progress = this.progressSnapshot();
+    return {
+      phase: this.phase, status: "running", currentAction: current.action, blockingReason: current.blocking,
+      lastActivityAt: new Date(this.lastActivity).toISOString(), activeTools: this.activeTools.size,
+      environment: this.job.workspaceMode === "managed-worktree" ? "isolated" : "existing",
+      mutatesProduction: mutatesProduction(this.capabilities()),
+      ...(progress ? { progress } : {})
+    };
   }
   setPhase(phase) { if (this.phase !== phase) { this.phase = phase; this.phaseSince = Date.now(); this.publish("phase", { phase }); } }
   checkTime() {
-    const key = { inspecting: "inspectionSeconds", editing: "editingSeconds", verifying: "verificationSeconds" }[this.phase];
-    if (Date.now() - this.phaseSince > this.runtime[key] * 700 && !this.warnings.has(this.phase)) {
+    const now = Date.now();
+    if (now - this.lastHeartbeat >= this.runtime.heartbeatSeconds * 1000) {
+      this.lastHeartbeat = now;
+      this.publish("heartbeat", this.heartbeatEvent());
+    }
+    const budget = PHASE_BUDGET[this.phase] || PHASE_BUDGET.editing;
+    if (now - this.phaseSince > this.runtime[budget.seconds] * 700 && !this.warnings.has(this.phase)) {
       this.warnings.add(this.phase); this.publish('stall-warning', { phase: this.phase, reason: '70% of phase time budget used', lastProgressAt: new Date(this.lastProgress).toISOString(), recommendation: 'Inspect checkpoint; split scope or send a bounded correction before the budget expires.' });
     }
-    if (Date.now() - this.phaseSince > this.runtime[key] * 1000) return { code: "PHASE_BUDGET_EXCEEDED", phase: this.phase, recoverable: true };
-    if (!this.activeTools.size && Date.now() - this.lastActivity > this.runtime.idleSeconds * 1000) return { code: "STALLED", phase: this.phase, recoverable: true };
+    if (now - this.phaseSince > this.runtime[budget.seconds] * 1000) return { code: "PHASE_BUDGET_EXCEEDED", phase: this.phase, recoverable: true };
+    if (this.activeTools.size || this.phase === "verifying") return null;
+    if (now - this.lastActivity > this.runtime.idleSeconds * 1000) return { code: "STALLED", phase: this.phase, recoverable: true };
     return null;
   }
   inspectFile(value) {
@@ -94,6 +135,9 @@ export class JobPolicy {
     if (subagent && this.job.control.noSubagents) throw new Error("Subagents are disabled for this task");
     if (web && this.job.control.disableWebSearch) throw new Error("Web access is disabled for this task");
     if (mutation && !this.job.write) throw new Error("Read-only task cannot mutate files");
+    const stage = this.job.acceptance?.stage;
+    if (stage === "inspect" && mutation) throw new Error("Inspect stage cannot mutate files");
+    if (stage === "verify" && mutation) throw new Error("Verify stage cannot mutate files");
     for (const value of locations) {
       const full = workspacePath(this.job.executionPath, value);
       const file = path.relative(this.job.executionPath, full).replace(/\\/g, "/");
@@ -102,7 +146,15 @@ export class JobPolicy {
     }
     if (/terminal|bash|shell/i.test(name)) {
       if (!commandAllowed(command, this.job.control)) throw new Error(`Command is outside permitted capabilities: ${command || name}`);
-      if (this.job.acceptance.requiredCommands?.includes(command)) this.setPhase("verifying");
+      assertCommandCapability(command, this.capabilities());
+      const needed = commandCapability(command);
+      if (stage === "inspect" && (needed === "edit" || needed === "buildImage" || needed === "push" || needed === "deploy")) throw new Error(`Inspect stage cannot run ${needed} commands`);
+      if (stage === "implement" && (needed === "buildImage" || needed === "push" || needed === "deploy")) throw new Error(`Implement stage cannot run ${needed} commands`);
+      if (stage === "verify" && (needed === "buildImage" || needed === "push" || needed === "deploy")) throw new Error(`Verify stage cannot run ${needed} commands`);
+      if (stage === "package" && (needed === "push" || needed === "deploy")) throw new Error("Package stage cannot push or deploy");
+      if (needed === "push" || needed === "deploy") this.setPhase("publishing");
+      else if (needed === "buildImage") this.setPhase("packaging");
+      else if (this.job.acceptance.requiredCommands?.includes(command) || needed === "test") this.setPhase("verifying");
       else if (/\bgit\s+(?:add|commit)\b/.test(command)) this.setPhase("editing");
     } else if (mutation) { this.setPhase("editing"); }
     if (this.job.control.noSubagents && /spawn_subagent/i.test(name)) throw new Error("Subagents are disabled for this task");
@@ -148,10 +200,10 @@ export class JobPolicy {
     if (this.actions) { this.metrics.actionTurns += 1; this.narration = 0; }
     else { this.metrics.narrationOnlyTurns += 1; this.narration += 1; }
     this.actions = 0; this.context.lastReport = String(event.lastAssistantMessage || "").slice(-6000);
-    const limit = this.runtime[{ inspecting: "inspectionTurns", editing: "editingTurns", verifying: "verificationTurns" }[this.phase]];
+    const limit = this.runtime[(PHASE_BUDGET[this.phase] || PHASE_BUDGET.editing).turns];
     if ((this.job.control.maxTurns && this.metrics.turns >= this.job.control.maxTurns) || this.phaseCounts[this.phase] > limit || this.narration > this.runtime.maxNarrationOnlyTurns) return { continue: false, stopReason: "STALLED: phase or narration budget exceeded" };
     if (this.job.write && this.narration >= this.runtime.maxNarrationOnlyTurns) return { decision: "block", reason: "Codex supervisor: two narration-only rounds produced no action. Execute the smallest permitted change now, then run the required checks." };
     return {};
   }
-  checkpoint() { return { phase: this.phase, metrics: this.metrics, phaseCounts: this.phaseCounts, readFiles: [...this.reads.values()], ...this.context }; }
+  checkpoint() { return { phase: this.phase, currentAction: this.currentAction(), lastActivityAt: new Date(this.lastActivity).toISOString(), activeTools: this.activeTools.size, metrics: this.metrics, phaseCounts: this.phaseCounts, readFiles: [...this.reads.values()], ...this.context }; }
 }

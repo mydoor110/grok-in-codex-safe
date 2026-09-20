@@ -24,6 +24,10 @@ See [reliability and supervision](docs/reliability-and-supervision.md) for exact
 
 Code tasks now use plugin-side acceptance instead of treating a successful process exit as a completed task.
 Pass `acceptance` with exact paths, verification commands, commit and artifact requirements.
+Default capabilities stop at local verify; `buildImage` / `push` / `deploy` are explicit, and
+`publish.images` plus a clean worktree (or `allowDirtyPublish`) are required before a remote push.
+Optional `preflight`, `stage`/`requires`, `cleanupPolicy`, and `artifacts/<jobId>/` reports are
+generic contract fields, not per-project hooks.
 See [the contract and issue-by-issue coverage](docs/verified-delivery.md) for examples, compatibility changes,
 and the remaining runner-dependent limitations. Explicit `worktree=false` is honored; resume reuses
 and validates the original workspace. `list_worktrees`, `retain_worktree`, and `cleanup_worktree`
@@ -144,7 +148,8 @@ For multi-PR or ambiguous product work, prefer:
 ## Job control semantics
 
 - **Concurrent multi-job support** — no single-job global lock. Prefer `background=true` for long work.
-- **Status** — live progress is a tail of accumulated text *and* thought streams; empty/whitespace-only stream tokens floor to `running`.
+- **Status** — live progress is a tail of accumulated text *and* thought streams plus structured
+  heartbeats (`phase`, `currentAction`, `lastActivityAt`); empty/whitespace-only stream tokens floor to `running`.
 - **Result** — plan jobs prefer harvested `plan.md` body over narration; finished jobs persist `config`, `usage`, and `artifacts` (v3 schema).
 - **Reaper** — dead pid + complete parseable `result.json` reconciles to completed; dead pid + empty/truncated/incomplete result → terminal **failed** with distinct diagnostics (no forever-`running` zombies).
 - **Atomic writes** — background workers write `result.json` via tmp + rename (no partial mid-write; no leftover `.tmp.*` after success).

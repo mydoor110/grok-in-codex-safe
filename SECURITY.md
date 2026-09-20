@@ -13,6 +13,9 @@ This independent derivative of [stdevMac/grok-in-codex](https://github.com/stdev
 - Sensitive filenames are detected before delegation.
 - GitHub writes, package installation, network/download tools, infrastructure CLIs, destructive
   commands, secrets, and broad allow rules require explicit user approval.
+- Acceptance capabilities are a ladder: `read` → `edit` → `test` → `buildImage` → `push` → `deploy`.
+  Docker compose/build is not Docker push. Push and deploy also need `sensitiveApproved` and a
+  target preview; dirty worktrees cannot be published unless `allowDirtyPublish` is set.
 
 ## Approval contract
 

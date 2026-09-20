@@ -1,5 +1,9 @@
 // Count explicit turn boundaries only. Stream text chunks are not model turns.
 // This function is embedded in the runner so foreground and background agree.
+export function writeWatchShouldStall(lastChange, now, activeTools, idleMs = 180000) {
+  return Number(activeTools) === 0 && now - lastChange > idleMs;
+}
+
 export function createActionWatchdog(maxNarrationOnlyTurns = 2) {
   const metrics = { turns: 0, actionTurns: 0, narrationOnlyTurns: 0, inspectionTurns: 0, mutationTurns: 0, verificationTurns: 0, duplicateReads: 0 };
   let phase = "inspecting", action = false, consecutive = 0, turnEventsObserved = false;
