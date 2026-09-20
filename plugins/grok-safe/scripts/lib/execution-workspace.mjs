@@ -17,7 +17,7 @@ export function prepareExecutionWorkspace({ cwd, jobId, jobsDir, write, worktree
     if (previous.finalHead && current.head !== previous.finalHead) throw new Error("RESUME_CONTEXT_LOST: HEAD changed since the previous attempt");
     if (previous.finalSnapshot && JSON.stringify(current) !== JSON.stringify(previous.finalSnapshot)) throw new Error("RESUME_CONTEXT_LOST: workspace changed since the previous attempt");
     return { executionPath, workspaceOwnerId: previous.workspaceOwnerId || previous.id, workspaceMode: previous.workspaceMode, baseCommit: previous.baseCommit,
-      initialSnapshot: previous.initialSnapshot, acceptance: previous.acceptance,
+      initialSnapshot: previous.initialSnapshot, acceptance: previous.acceptance, generatedArtifactSnapshot: previous.generatedArtifactSnapshot,
       resumeMode: "same-session", originalSessionId: previous.grokSessionId, sameWorktree: true, sameBaseCommit: true };
   }
   if (worktreeRef && !worktree) throw new Error("INVALID_WORKSPACE_OPTIONS: worktreeRef requires worktree=true");

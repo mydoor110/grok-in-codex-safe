@@ -6,7 +6,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { deliveryArtifactPaths, normalizeAcceptance, snapshotWorkspace, verifyDelivery } from "./lib/acceptance.mjs";
+import { assertPreviousStage, deliveryArtifactPaths, normalizeAcceptance, snapshotWorkspace, verifyDelivery } from "./lib/acceptance.mjs";
 import { prepareExecutionWorkspace, cleanupExecutionWorkspace } from "./lib/execution-workspace.mjs";
 import { expandArgv, parseArgs } from "./lib/args.mjs";
 import {
@@ -911,6 +911,7 @@ You are a worker supervised by Codex. Work only inside the active Git worktree. 
   try {
   Object.assign(job, prepareExecutionWorkspace({ cwd, jobId: job.id, jobsDir: path.dirname(job.logFile), write: writeMode, worktree,
     worktreeRef: options["worktree-ref"], previous, acceptance }));
+  assertPreviousStage(job.executionPath, job.acceptance?.requires);
   } catch (error) {
     job.status = "failed";
     job.error = { code: error.message.startsWith("RESUME_CONTEXT_LOST") ? "RESUME_CONTEXT_LOST" : "WORKSPACE_SETUP_FAILED", message: error.message, phase: "inspecting" };

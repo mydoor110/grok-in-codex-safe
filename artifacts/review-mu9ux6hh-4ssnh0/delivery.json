@@ -1,0 +1,100 @@
+{
+  "status": "completed",
+  "processExited": true,
+  "taskCompleted": true,
+  "acceptancePassed": true,
+  "implementationStatus": "reported-complete",
+  "artifactStatus": "unchanged",
+  "testStatus": "not-run",
+  "infrastructureErrors": [],
+  "reviewStatus": "pending",
+  "integrationStatus": "not-merged",
+  "baseCommit": "5b6e334d1ae1e7ecd96c82984e306faa5c751bc3",
+  "initialHead": "5b6e334d1ae1e7ecd96c82984e306faa5c751bc3",
+  "finalHead": "5b6e334d1ae1e7ecd96c82984e306faa5c751bc3",
+  "resultCommit": null,
+  "workspacePath": "D:\\存放\\王萌博\\code\\grok-in-codex-safe",
+  "worktreePath": "D:\\存放\\王萌博\\code\\grok-in-codex-safe",
+  "workspaceMode": "read-only-workspace",
+  "changedFiles": [],
+  "untrackedFiles": [
+    "artifacts/20260920-delivery-integrity/manifest.json",
+    "artifacts/20260920-delivery-integrity/report.md",
+    "artifacts/20260920-delivery-integrity/test-output.txt",
+    "tests/delivery-integrity.test.mjs"
+  ],
+  "worktreeClean": false,
+  "baseIsAncestor": true,
+  "commits": [],
+  "mergeCommits": [],
+  "cherryPickSafety": "not-checked",
+  "tests": [],
+  "testSummary": {
+    "passed": 0,
+    "failed": 0,
+    "harnessFailures": 0,
+    "environmentFailures": 0,
+    "infrastructureFailures": 0,
+    "productFailures": 0,
+    "unknownFailures": 0,
+    "countUnit": "command",
+    "failureClusters": 0,
+    "independentDefects": 0,
+    "clusteringMethod": "heuristic-error-signature",
+    "clusters": []
+  },
+  "oracleChanged": [],
+  "images": [],
+  "productionChanged": false,
+  "remainingRisks": [],
+  "artifacts": null,
+  "cleanup": {
+    "created": {
+      "containers": [],
+      "volumes": [],
+      "networks": [],
+      "images": []
+    },
+    "remaining": [],
+    "cleaned": []
+  },
+  "stageResult": null,
+  "sourceCommit": "5b6e334d1ae1e7ecd96c82984e306faa5c751bc3",
+  "sourceDirty": true,
+  "diffHash": "dff6d209173b60ef1b5880d41751d1595411b59d31a2511abf8dd33b5ee6fb5c",
+  "sourceTreeHash": "a9081850674fea6851a70de58d73c8b7b0ec5b2b69960dd5bf7bc33e4367b1f3",
+  "publishPreview": [],
+  "capabilities": [
+    "read"
+  ],
+  "stage": null,
+  "acceptanceFailures": [],
+  "requestedModel": null,
+  "resolvedModel": "grok-4.6",
+  "modelVersion": null,
+  "reasoningEffort": null,
+  "progress": {
+    "phase": "completed",
+    "completedAt": "2026-09-20T13:36:33.603Z",
+    "verificationSummary": {
+      "passed": true,
+      "failures": [],
+      "testsRun": 0,
+      "testSummary": {
+        "passed": 0,
+        "failed": 0,
+        "harnessFailures": 0,
+        "environmentFailures": 0,
+        "infrastructureFailures": 0,
+        "productFailures": 0,
+        "unknownFailures": 0,
+        "countUnit": "command",
+        "failureClusters": 0,
+        "independentDefects": 0,
+        "clusteringMethod": "heuristic-error-signature",
+        "clusters": []
+      }
+    }
+  },
+  "deliveryError": null
+}

@@ -41,9 +41,10 @@ export function publicExecution(job, detail = "full") {
   if (referencedFields.length) result.referencedFields = referencedFields;
   return result;
 }
-function verifyAsync(job, processOk = true, exitCode = 0) {
+function verifyAsync(job, processOk = true, exitCode = 0, onProgress = () => {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [VERIFIER], { cwd: job.executionPath, env: sanitizedEnvironment(), windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [VERIFIER], { cwd: job.executionPath, env: sanitizedEnvironment(), windowsHide: true, stdio: ["pipe", "pipe", "pipe", "ipc"] });
+    child.on("message", event => { try { onProgress(event); } catch (error) { child.kill(); reject(error); } });
     let output = "", error = "";
     child.stdout.on("data", chunk => { output += chunk; }); child.stderr.on("data", chunk => { error += chunk; });
     child.on("error", reject); child.on("close", code => { try { if (code !== 0) throw new Error(error || "Verifier crashed"); resolve(JSON.parse(output)); } catch (e) { reject(e); } });
@@ -89,7 +90,9 @@ export class GrokSupervisor {
     catch (error) { release(); throw error; }
     try {
     const job = { id, jobId: id, schemaVersion: 5, kind, title: prompt.slice(0, 120), prompt, status: "running", write,
-      createdAt: new Date().toISOString(), workspaceRoot: cwd, ...workspace, environment,
+      createdAt: new Date().toISOString(), workspaceRoot: cwd, ...workspace, environment: { ...environment,
+        cleanupOwnershipLabel: `io.grok-safe.job-id=${id}`,
+        cleanupInstruction: 'Label task-created Docker containers, networks and volumes with cleanupOwnershipLabel; automatic cleanup retains resources without that exact label.' },
       round: 0, messages: previous?.messages || {}, implementationStatus: 'running', artifactStatus: 'unknown', testStatus: 'not-run', infrastructureErrors: [], reviewStatus: 'pending', integrationStatus: 'not-merged',
       control, security: { ...input }, acceptance: previous?.acceptance || acceptance, runtime,
       check: previous?.check ?? input.check ?? true, requestedModel: input.model || null, effort: input.effort || null,
@@ -133,6 +136,7 @@ export class GrokSupervisor {
       currentAction: action?.action, blockingReason: action?.blocking,
       lastActivityAt: worker.policy.lastActivity ? new Date(worker.policy.lastActivity).toISOString() : undefined,
       activeTools: worker.policy.activeTools?.size || 0,
+      progress: worker.policy.progressSnapshot?.(),
       mutatesProduction: (worker.job.acceptance?.capabilities || []).some(name => name === "push" || name === "deploy")
     }));
   }
@@ -275,6 +279,7 @@ export class GrokSupervisor {
         if (completed && !worker.observedHooks?.has("stop")) throw new Error("CLI_INCOMPATIBLE: prompt completed without the registered native stop callback");
         job.implementationStatus = completed ? 'reported-complete' : 'interrupted'; job.testStatus = 'running';
         const delivery = await this.verify(worker, completed, completed ? 0 : 1);
+        job.generatedArtifactSnapshot = delivery.generatedArtifactSnapshot || job.generatedArtifactSnapshot;
         // Messages received while the verifier was awaiting must be processed before completion.
         if (!worker.cancelRequested && worker.pendingMessages.length) {
           const messages = worker.pendingMessages.splice(0); prompt = messages.map(m => m.text).join('\n\n');
@@ -309,7 +314,15 @@ export class GrokSupervisor {
     worker.client?.close(); worker.hookServer?.close();
   }
   async verify(worker, processOk, exitCode) {
-    try { return await this.verifier(worker.job, processOk, exitCode); }
+    try { return await this.verifier(worker.job, processOk, exitCode, event => {
+      if (!worker.policy || !worker.events) return;
+      worker.policy.verificationProgress = event.progress;
+      worker.policy.verificationAction = event.type === "verification-command-started" ? event.currentAction : null;
+      worker.policy.lastActivity = Date.now();
+      const { type, ...data } = event;
+      this.publish(worker, type, data);
+      this.persist(worker);
+    }); }
     catch (error) {
       const job = worker.job;
       let finalSnapshot; try { finalSnapshot = snapshotWorkspace(job.executionPath, job.acceptance.requiredArtifacts || []); } catch {}
@@ -318,6 +331,8 @@ export class GrokSupervisor {
         finalSnapshot, finalHead: finalSnapshot?.head, testStatus: 'infrastructure-error',
         infrastructureErrors: [{ code: 'VERIFIER_UNAVAILABLE', message: error.message }], acceptanceFailures: ['Verification infrastructure failed; preserve outputs and retry verification'],
         reviewStatus: 'pending', integrationStatus: 'not-merged' };
+    } finally {
+      if (worker.policy) { worker.policy.verificationAction = null; worker.policy.verificationProgress = null; }
     }
   }
   async send(cwd, id, { text, delivery = "steer", messageId = randomBytes(12).toString("hex") }) {

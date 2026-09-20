@@ -1,0 +1,20 @@
+{
+  "files": [
+    {
+      "path": "report.md",
+      "bytes": 2519,
+      "sha256": "783181e819ce67014c0193155df474c89757cabd8901f668f19fc0fc592310a8"
+    },
+    {
+      "path": "test-output.txt",
+      "bytes": 33710,
+      "sha256": "5875d6c5af2e776de10ab6a2e63799291b698d17972ce0d6185aa906d5862a81"
+    }
+  ],
+  "createdAt": "2026-09-20T10:01:37.9366550Z",
+  "tests": {
+    "passed": 191,
+    "skipped": 0,
+    "failed": 0
+  }
+}

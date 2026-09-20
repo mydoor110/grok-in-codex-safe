@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { splitRawArgumentString } from './args.mjs';
+import { assertPreviousStage } from './acceptance.mjs';
 
 export const VERIFIER_PATH = fileURLToPath(new URL('../verification-worker.mjs', import.meta.url));
 export function preflightError(code, message) { return Object.assign(new Error(`${code}: ${message}`), { code }); }
@@ -45,6 +46,7 @@ export function verifyInstallation(entry = VERIFIER_PATH) {
 }
 
 export function preflightExecution(cwd, acceptance, control, { entry = VERIFIER_PATH, installation: checkedInstallation, checkWritable = true } = {}) {
+  assertPreviousStage(cwd, acceptance.requires);
   const installation = checkedInstallation || verifyInstallation(entry);
   const commands = (acceptance.requiredCommands || []).map(command => resolveVerificationCommand(command, cwd));
   const interpreters = {};
@@ -193,10 +195,20 @@ export function planCleanup(created, policy = {}, success = false) {
   return remove;
 }
 
-export function executeCleanup(remove = {}) {
+export function executeCleanup(remove = {}, jobId, runCommand = spawnSync) {
   const cleaned = [], remaining = [], errors = [];
   const run = (args, id, kind) => {
-    const result = spawnSync("docker", args, { encoding: "utf8", windowsHide: true, timeout: 20000 });
+    // A global before/after inventory cannot establish ownership in a shared daemon.
+    const inspectArgs = kind === "container" ? ["inspect", "--type", "container", id] : [kind, "inspect", id];
+    const inspected = jobId ? runCommand("docker", inspectArgs, { encoding: "utf8", windowsHide: true, timeout: 15000 }) : { status: null };
+    let owner;
+    try { const resource = JSON.parse(inspected.stdout)[0]; owner = (resource.Config?.Labels || resource.Labels || {})["io.grok-safe.job-id"]; } catch {}
+    if (!jobId || inspected.status !== 0 || owner !== jobId) {
+      remaining.push({ kind, id });
+      errors.push({ kind, id, code: "RESOURCE_OWNERSHIP_UNVERIFIED", message: "Retained resource without matching io.grok-safe.job-id label" });
+      return;
+    }
+    const result = runCommand("docker", args, { encoding: "utf8", windowsHide: true, timeout: 20000 });
     if (result.status === 0) cleaned.push({ kind, id });
     else { remaining.push({ kind, id }); errors.push({ kind, id, message: (result.stderr || result.stdout || "").trim().slice(0, 400) }); }
   };

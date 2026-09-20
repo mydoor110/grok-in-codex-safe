@@ -81,6 +81,34 @@
 停止钩子的轮次是原生回调次数，不等同于每次内部模型采样；不编造内部轮数。
 兼容的 headless 路径仍使用旧流式看门狗，不能提供同样的途中控制能力。
 
+## 2026-09-20 交付证据修复
+
+- ACP 验收子进程发送 `verification-command-started` / `verification-command-finished`，
+  监督器的心跳和进度文件包含实际命令及 `progress.completed/total/unit`。
+  这里的单位是 `command`；一个命令执行 57 个用例时，不会伪装成已解析到 57 个用例。
+- `requires` 在 ACP 预检和 headless 工作区建立后、模型执行前检查，验收时再次检查。
+  前置报告不能通过符号链接跳出工作区。隔离工作区也必须能访问声明的前置报告。
+- `testSummary.independentDefects` 只统计标为 `product` 的错误签名聚类，
+  `failureClusters` 包含全部失败类型；`countUnit=command` 明确旧计数的真实含义。
+  分类和聚类仍是启发式，不能当成经过人工确认的独立 Bug 数。
+- 报告/清单写入失败使 `status=incomplete`、`taskCompleted=false`、`acceptancePassed=false`。
+  重试写入前撤销旧的成功阶段报告，清单成功写入后才写新的 `delivery.json`。
+  源产物和目标目录都检查工作区边界；缺失、超限或保留文件名冲突不再静默跳过。
+- 持久化报告包含命令证据、验收失败、清理结果、源码提交和脏状态。
+  `diffHash` 是 `git diff --binary --no-ext-diff --no-textconv HEAD --` 输出的 SHA-256，
+  包含已暂存和未暂存改动；未跟踪文件由 `sourceTreeHash` 覆盖。
+  `sourceTreeHash` 是验收快照中文件路径、内容/模式哈希排序后的摘要；这些都是验收时的证据，
+  尚不是镜像构建时的证明，不代表已验证 OCI labels、SBOM 或远端 digest。
+- 冻结断言的 diff 使用初始 HEAD 为基线，已暂存或已提交的修改也能复核。
+  初始工作区已有脏修改时，diff 仍相对初始 HEAD；精确变化同时参看 initialHash/finalHash。
+- Docker 清理除了前后资源差集，还要求资源标签 `io.grok-safe.job-id=<jobId>` 匹配。
+  ACP 环境提示提供该标签。缺少归属证据的资源保留并记录 `RESOURCE_OWNERSHIP_UNVERIFIED`，
+  防止删除并行任务的资源；清理错误进入 `remainingRisks`。
+
+回归测试新增于 `tests/delivery-integrity.test.mjs`。现有测试仅修改一个统计预期：
+未知故障的 `independentDefects` 从 1 改为 0，并新增 `failureClusters=1` 断言；
+原因是未知故障没有产品缺陷证据，不能计入产品缺陷数。未放宽产品验收断言。
+
 ## 敏感检测
 
 默认排除 `.git`、`.venv`、`venv`、`node_modules`、`vendor`、`dist`、`build`、

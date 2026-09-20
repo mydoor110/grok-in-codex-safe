@@ -233,7 +233,9 @@ export function summarizeTests(tests = []) {
     counts[bucket] += 1;
   }
   const clusters = clusterTestFailures(tests);
-  return { ...counts, independentDefects: clusters.length, clusters };
+  return { ...counts, countUnit: "command", failureClusters: clusters.length,
+    independentDefects: clusters.filter(item => item.failureType === "product").length,
+    clusteringMethod: "heuristic-error-signature", clusters };
 }
 
 export function assertPreviousStage(cwd, relative) {
@@ -242,14 +244,16 @@ export function assertPreviousStage(cwd, relative) {
   const rel = path.relative(path.resolve(cwd), full);
   if (rel.startsWith("..") || path.isAbsolute(rel)) throw new Error(`Stage requirement escapes workspace: ${relative}`);
   if (!fs.existsSync(full)) throw new Error(`Required previous stage result is missing: ${relative}`);
+  const realRelative = path.relative(fs.realpathSync(cwd), fs.realpathSync(full));
+  if (realRelative === ".." || realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) throw new Error(`Stage requirement escapes workspace: ${relative}`);
   let parsed;
   try { parsed = JSON.parse(fs.readFileSync(full, "utf8")); }
   catch { throw new Error(`Required previous stage result is not JSON: ${relative}`); }
   if (!["success", "completed"].includes(parsed.status)) throw new Error(`Previous stage is not successful: ${relative} (${parsed.status || "unknown"})`);
 }
 
-export function oracleDiff(cwd, file) {
-  const result = spawnSync("git", ["diff", "--", file], { cwd, encoding: "utf8", windowsHide: true, maxBuffer: 1024 * 1024 });
+export function oracleDiff(cwd, file, base = "HEAD") {
+  const result = spawnSync("git", ["diff", "--no-ext-diff", "--no-textconv", base, "--", file], { cwd, encoding: "utf8", windowsHide: true, maxBuffer: 1024 * 1024 });
   if (result.status === 0 && result.stdout.trim()) return result.stdout.slice(0, 8000);
   const full = path.join(cwd, file);
   if (!fs.existsSync(full) || !fs.statSync(full).isFile()) return "";
@@ -267,30 +271,52 @@ export function collectArtifactFiles(cwd, acceptance = {}) {
 
 export function writeArtifactManifest(cwd, jobId, files, report) {
   if (!cwd || !jobId) return null;
+  if (!/^[A-Za-z0-9_-]+$/.test(String(jobId))) throw new Error("Invalid artifact job id");
   const dir = path.join(cwd, "artifacts", String(jobId));
   const rel = path.relative(path.resolve(cwd), dir);
   if (rel.startsWith("..") || path.isAbsolute(rel)) throw new Error("Artifact directory escapes workspace");
+  const safeDestination = full => {
+    const relative = path.relative(path.resolve(cwd), full);
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error("Artifact path escapes workspace");
+    let current = path.resolve(cwd);
+    for (const part of relative.split(path.sep)) {
+      current = path.join(current, part);
+      try { if (fs.lstatSync(current).isSymbolicLink()) throw new Error("Artifact path contains a symbolic link"); }
+      catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
+    return full;
+  };
+  safeDestination(dir);
   fs.mkdirSync(dir, { recursive: true });
+  const deliveryPath = safeDestination(path.join(dir, "delivery.json"));
+  const manifestPath = safeDestination(path.join(dir, "manifest.json"));
+  // A failed retry must never leave an earlier successful stage result consumable.
+  fs.rmSync(deliveryPath, { force: true });
   const entries = [];
   for (const file of files || []) {
     const src = path.resolve(cwd, file);
     const inside = path.relative(path.resolve(cwd), src);
-    if (inside.startsWith("..") || path.isAbsolute(inside) || !fs.existsSync(src) || !fs.statSync(src).isFile() || fs.statSync(src).size > 8 * 1024 * 1024) continue;
-    const dest = path.join(dir, inside);
+    if (inside.startsWith("..") || path.isAbsolute(inside) || !fs.existsSync(src) || !fs.statSync(src).isFile()) throw new Error(`Artifact is missing or outside the workspace: ${file}`);
+    const real = path.relative(fs.realpathSync(cwd), fs.realpathSync(src));
+    if (real === ".." || real.startsWith(`..${path.sep}`) || path.isAbsolute(real)) throw new Error(`Artifact escapes workspace: ${file}`);
+    if (fs.statSync(src).size > 8 * 1024 * 1024) throw new Error(`Artifact exceeds 8 MiB limit: ${file}`);
+    if (["delivery.json", "manifest.json"].includes(inside.replace(/\\/g, "/"))) throw new Error(`Reserved artifact path: ${file}`);
+    const dest = safeDestination(path.join(dir, inside));
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(src, dest);
     entries.push({ path: inside.replace(/\\/g, "/"), sha256: createHash("sha256").update(fs.readFileSync(dest)).digest("hex"), bytes: fs.statSync(dest).size });
   }
   const deliveryRel = "delivery.json";
-  fs.writeFileSync(path.join(dir, deliveryRel), `${JSON.stringify(report, null, 2)}\n`);
-  entries.push({ path: deliveryRel, sha256: createHash("sha256").update(fs.readFileSync(path.join(dir, deliveryRel))).digest("hex"), bytes: fs.statSync(path.join(dir, deliveryRel)).size });
+  const delivery = Buffer.from(`${JSON.stringify(report, null, 2)}\n`);
+  entries.push({ path: deliveryRel, sha256: createHash("sha256").update(delivery).digest("hex"), bytes: delivery.length });
   const manifest = { jobId, createdAt: new Date().toISOString(), files: entries };
   manifest.sha256 = createHash("sha256").update(JSON.stringify({ jobId: manifest.jobId, files: entries })).digest("hex");
-  fs.writeFileSync(path.join(dir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  fs.writeFileSync(deliveryPath, delivery);
   return { dir: path.relative(cwd, dir).replace(/\\/g, "/"), manifest };
 }
 
-export function verifyDelivery(job, processOk, exitCode) {
+export function verifyDelivery(job, processOk, exitCode, onProgress = () => {}) {
   const acceptance = job.acceptance || { expectedChange: true, requiredCommands: [] };
   const failures = [];
   const tests = [];
@@ -305,6 +331,8 @@ export function verifyDelivery(job, processOk, exitCode) {
       // Execute only caller-specified, preflighted commands. Model prose is never test evidence.
       for (const command of processOk ? acceptance.requiredCommands || [] : []) {
         const startedAt = new Date().toISOString();
+        onProgress({ type: "verification-command-started", phase: "verifying", status: "running", currentAction: command,
+          lastActivityAt: startedAt, progress: { completed: tests.length, total: acceptance.requiredCommands.length, unit: "command" } });
         let r;
         try {
           const { executable, args } = resolveVerificationCommand(command, cwd);
@@ -314,6 +342,9 @@ export function verifyDelivery(job, processOk, exitCode) {
         tests.push({ command, cwd, startedAt, finishedAt: new Date().toISOString(), exitCode: r.status,
           stdout: (r.stdout || "").slice(-4000), stderr: (r.stderr || r.error?.message || "").slice(-4000),
           failureKind: classified.failureKind, failureType: classified.failureType });
+        onProgress({ type: "verification-command-finished", phase: "verifying", status: r.status === 0 ? "completed" : "failed",
+          currentAction: command, exitCode: r.status, failureType: classified.failureType, lastActivityAt: tests.at(-1).finishedAt,
+          progress: { completed: tests.length, total: acceptance.requiredCommands.length, unit: "command" } });
         if (r.status !== 0) failures.push(`Verification failed: ${command}`);
         if (r.error || ['infrastructure', 'environment'].includes(classified.failureType) || ['dependency-missing', 'permission-denied'].includes(classified.failureKind)) {
           infrastructureErrors.push({ code: r.error?.code || classified.failureKind || classified.failureType, command, message: r.stderr || r.error?.message, failureType: classified.failureType });
@@ -323,6 +354,7 @@ export function verifyDelivery(job, processOk, exitCode) {
       const initial = job.initialSnapshot;
       if (!initial) throw new Error("Missing initial workspace evidence");
       for (const file of new Set([...Object.keys(initial.files), ...Object.keys(final.files)])) {
+        if (job.generatedArtifactSnapshot?.[file] === final.files[file] && final.files[file] != null) continue;
         if (initial.files[file] !== final.files[file]) changedFiles.push({ path: file, status: final.files[file] == null ? "deleted" : initial.files[file] == null ? "added" : "modified" });
       }
       untrackedFiles = gitEvidence(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]).split("\0").filter(Boolean);
@@ -341,7 +373,7 @@ export function verifyDelivery(job, processOk, exitCode) {
         for (const file of new Set([...Object.keys(initial.files), ...Object.keys(final.files)])) {
           if (acceptance.frozenTestGlobs.some(glob => matchesPath(file, glob)) && initial.files[file] !== final.files[file]) {
             const reason = typeof reasons[file] === "string" ? reasons[file].trim() : "";
-            oracleChanged.push({ path: file, initialHash: initial.files[file] || null, finalHash: final.files[file] || null, diff: oracleDiff(cwd, file), reason: reason || null });
+            oracleChanged.push({ path: file, initialHash: initial.files[file] || null, finalHash: final.files[file] || null, diff: oracleDiff(cwd, file, initial.head), diffBase: initial.head, reason: reason || null });
             if (!reason) failures.push(`Oracle/test file changed without a reason: ${file}`);
           }
         }
@@ -391,24 +423,21 @@ export function verifyDelivery(job, processOk, exitCode) {
   if (testSummary.environmentFailures) remainingRisks.push({ type: "environment-failures", count: testSummary.environmentFailures });
   if ((productionChanged || mutatesProduction(capabilities)) && (job.sourceDirty || final?.status) && acceptance.publish?.allowDirtyPublish) remainingRisks.push({ type: "dirty-publish" });
   if (images.some(image => isMutableTag(image.tag))) remainingRisks.push({ type: "mutable-tag" });
-  const diffHash = final ? createHash("sha256").update(JSON.stringify(changedFiles.map(file => [file.path, final.files[file.path]]))).digest("hex") : null;
-  const passedAfterPublish = processOk && failures.length === 0;
-  let artifacts = null;
+  let diffHash = null;
+  const sourceTreeHash = final ? createHash("sha256").update(JSON.stringify(Object.entries(final.files).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))).digest("hex") : null;
   try {
-    artifacts = writeArtifactManifest(cwd, job.id, collectArtifactFiles(cwd, acceptance), {
-      status: !processOk ? "failed" : passedAfterPublish ? "completed" : "incomplete",
-      stage: acceptance.stage || null, testSummary, remainingRisks, oracleChanged, images, productionChanged
-    });
-  } catch (error) { infrastructureErrors.push({ code: "ARTIFACT_PERSIST_FAILED", message: error.message }); failures.push(error.message); }
+    if (final) diffHash = createHash("sha256").update(gitEvidence(cwd, ["diff", "--binary", "--no-ext-diff", "--no-textconv", "HEAD", "--"])).digest("hex");
+  } catch (error) { infrastructureErrors.push({ code: "SOURCE_EVIDENCE_FAILED", message: error.message }); failures.push(error.message); }
+  const passedAfterPublish = processOk && failures.length === 0;
   let cleanup = { created: { containers: [], volumes: [], networks: [], images: [] }, remaining: [], cleaned: [] };
   if (job.environment?.dockerSnapshot) {
     const created = createdResources(job.environment.dockerSnapshot, dockerResourceSnapshot());
     const policy = acceptance.cleanupPolicy || normalizeCleanupPolicy(null, capabilities);
-    const executed = executeCleanup(planCleanup(created, policy, passedAfterPublish));
+    const executed = executeCleanup(planCleanup(created, policy, passedAfterPublish), job.id);
     cleanup = { policy, created, cleaned: executed.cleaned, remaining: leftoverFromCreated(created, executed.cleaned), errors: executed.errors };
   }
-  const stageResult = artifacts ? path.join(artifacts.dir, "delivery.json").replace(/\\/g, "/") : null;
-  return { status: !processOk ? "failed" : passedAfterPublish ? "completed" : "incomplete", processExited: exitCode != null, taskCompleted: passedAfterPublish, acceptancePassed: passedAfterPublish,
+  if (cleanup.errors?.length) remainingRisks.push({ type: "cleanup-failures", errors: cleanup.errors });
+  const result = { status: !processOk ? "failed" : passedAfterPublish ? "completed" : "incomplete", processExited: exitCode != null, taskCompleted: passedAfterPublish, acceptancePassed: passedAfterPublish,
     implementationStatus: processOk ? 'reported-complete' : 'interrupted',
     artifactStatus: final ? (changedFiles.length || commits.length ? 'produced' : 'unchanged') : 'unknown',
     testStatus: infrastructureErrors.length ? 'infrastructure-error' : !tests.length ? 'not-run' : tests.every(t => t.exitCode === 0) ? 'passed' : 'failed',
@@ -419,11 +448,33 @@ export function verifyDelivery(job, processOk, exitCode) {
     workspacePath: job.workspaceRoot, worktreePath: cwd, workspaceMode: job.workspaceMode,
     changedFiles, untrackedFiles, worktreeClean: final ? !final.status : null, baseIsAncestor, commits, mergeCommits,
     cherryPickSafety: "not-checked", tests, testSummary, oracleChanged,
-    images, productionChanged, remainingRisks, artifacts, cleanup, stageResult,
+    images, productionChanged, remainingRisks, artifacts: null, cleanup, stageResult: null,
     sourceCommit: final?.head || job.baseCommit || null, sourceDirty: Boolean(job.sourceDirty) || Boolean(final?.status),
-    diffHash, publishPreview: images, capabilities, stage: acceptance.stage || null,
+    diffHash, sourceTreeHash, publishPreview: images, capabilities, stage: acceptance.stage || null,
     acceptanceFailures: failures,
     requestedModel: job.requestedModel ?? job.model ?? null, resolvedModel: job.resolvedModel ?? null, modelVersion: job.modelVersion ?? null, reasoningEffort: job.effort ?? null,
     progress: { phase: !processOk ? "failed" : passedAfterPublish ? "completed" : "incomplete", completedAt, verificationSummary: { passed: passedAfterPublish, failures, testsRun: tests.length, testSummary } },
     deliveryError: failures.length ? { code: "ACCEPTANCE_FAILED", message: failures.join("; "), phase: "verifying", cause: null } : null };
+  try {
+    const { finalSnapshot, ...report } = result;
+    result.artifacts = writeArtifactManifest(cwd, job.id, collectArtifactFiles(cwd, acceptance), report);
+    result.stageResult = result.artifacts ? `${result.artifacts.dir}/delivery.json` : null;
+    // Resume compares the actual post-report workspace, not the pre-report source snapshot.
+    if (result.artifacts && final) {
+      result.finalSnapshot = snapshotWorkspace(cwd, [...(acceptance.requiredArtifacts || []), ...deliveryArtifactPaths(cwd, job.kind)]);
+      const generated = [...result.artifacts.manifest.files.map(file => `${result.artifacts.dir}/${file.path}`), `${result.artifacts.dir}/manifest.json`];
+      result.generatedArtifactSnapshot = { ...(job.generatedArtifactSnapshot || {}),
+        ...Object.fromEntries(generated.map(file => [file, result.finalSnapshot.files[file]]).filter(([, hash]) => hash != null)) };
+    }
+  } catch (error) {
+    infrastructureErrors.push({ code: "ARTIFACT_PERSIST_FAILED", message: error.message });
+    failures.push(error.message);
+    result.status = processOk ? "incomplete" : "failed";
+    result.taskCompleted = result.acceptancePassed = false;
+    result.testStatus = "infrastructure-error";
+    result.progress.phase = result.status;
+    result.progress.verificationSummary.passed = false;
+    result.deliveryError = { code: "ARTIFACT_PERSIST_FAILED", message: error.message, phase: "verifying", cause: null };
+  }
+  return result;
 }

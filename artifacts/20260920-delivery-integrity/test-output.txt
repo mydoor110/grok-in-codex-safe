@@ -1,0 +1,965 @@
+TAP version 13
+# Subtest: normal exit and existing dirt cannot masquerade as a delivery
+ok 1 - normal exit and existing dirt cannot masquerade as a delivery
+  ---
+  duration_ms: 3135.1177
+  ...
+# Subtest: tracked modification passes; requested missing commit fails
+ok 2 - tracked modification passes; requested missing commit fails
+  ---
+  duration_ms: 4902.5821
+  ...
+# Subtest: runner verification records real failures and output
+ok 3 - runner verification records real failures and output
+  ---
+  duration_ms: 2183.5898
+  ...
+# Subtest: unexpected untracked and forbidden paths fail acceptance
+ok 4 - unexpected untracked and forbidden paths fail acceptance
+  ---
+  duration_ms: 3778.5013
+  ...
+# Subtest: capability preflight rejects missing command, permissions and shell syntax
+ok 5 - capability preflight rejects missing command, permissions and shell syntax
+  ---
+  duration_ms: 3.2955
+  ...
+# Subtest: explicit existing workspace and resume preserve dirty work and baseline
+ok 6 - explicit existing workspace and resume preserve dirty work and baseline
+  ---
+  duration_ms: 1790.9822
+  ...
+# Subtest: managed worktree is plugin-owned and isolated from source directory
+ok 7 - managed worktree is plugin-owned and isolated from source directory
+  ---
+  duration_ms: 1227.5406
+  ...
+# Subtest: cleanup refuses dirty and retained worktrees and removes only a clean owned worktree
+ok 8 - cleanup refuses dirty and retained worktrees and removes only a clean owned worktree
+  ---
+  duration_ms: 2276.4917
+  ...
+# Subtest: required artifacts must exist, be fresh and nonempty
+ok 9 - required artifacts must exist, be fresh and nonempty
+  ---
+  duration_ms: 2703.3954
+  ...
+# Subtest: background result reconciliation cannot accept a plan-only write task
+ok 10 - background result reconciliation cannot accept a plan-only write task
+  ---
+  duration_ms: 3811.1632
+  ...
+# Subtest: ACP correlates out-of-order responses and concurrent client requests
+ok 11 - ACP correlates out-of-order responses and concurrent client requests
+  ---
+  duration_ms: 215.5178
+  ...
+# Subtest: native ACP events preserve tool identity and text
+ok 12 - native ACP events preserve tool identity and text
+  ---
+  duration_ms: 0.5988
+  ...
+# Subtest: event waits wake immediately, preserve cursors and clean up listeners
+ok 13 - event waits wake immediately, preserve cursors and clean up listeners
+  ---
+  duration_ms: 3.9103
+  ...
+# Subtest: catalog discovers nested CLI help, caches it and defers updates during work
+ok 14 - catalog discovers nested CLI help, caches it and defers updates during work
+  ---
+  duration_ms: 9.1399
+  ...
+# Subtest: update check never reinstalls current stable; active external runners defer install
+ok 15 - update check never reinstalls current stable; active external runners defer install
+  ---
+  duration_ms: 6.5368
+  ...
+# Subtest: successful stable update immediately rebuilds native command catalog
+ok 16 - successful stable update immediately rebuilds native command catalog
+  ---
+  duration_ms: 10.0721
+  ...
+# Subtest: expandArgv always splits a single shell-word blob (flagless multi-word)
+ok 17 - expandArgv always splits a single shell-word blob (flagless multi-word)
+  ---
+  duration_ms: 2.7838
+  ...
+# Subtest: expandArgv leaves already-split argv alone
+ok 18 - expandArgv leaves already-split argv alone
+  ---
+  duration_ms: 0.2978
+  ...
+# Subtest: parseArgs handles booleans and values
+ok 19 - parseArgs handles booleans and values
+  ---
+  duration_ms: 0.5241
+  ...
+# Subtest: splitRawArgumentString respects quotes
+ok 20 - splitRawArgumentString respects quotes
+  ---
+  duration_ms: 0.2649
+  ...
+# Subtest: extractDesignDocPathFromText reads DESIGN_DOC_PATH marker
+ok 21 - extractDesignDocPathFromText reads DESIGN_DOC_PATH marker
+  ---
+  duration_ms: 1.7947
+  ...
+# Subtest: resolveLatestDesignDoc picks newest md under .grok-designs
+ok 22 - resolveLatestDesignDoc picks newest md under .grok-designs
+  ---
+  duration_ms: 8.3372
+  ...
+# Subtest: resolveExecutePlanDesignPath --latest uses .grok-designs
+ok 23 - resolveExecutePlanDesignPath --latest uses .grok-designs
+  ---
+  duration_ms: 5.6506
+  ...
+# Subtest: resolveExecutePlanDesignPath rejects missing explicit path
+ok 24 - resolveExecutePlanDesignPath rejects missing explicit path
+  ---
+  duration_ms: 2.1282
+  ...
+# Subtest: collectDesignArtifacts copies DESIGN_DOC_PATH into .grok-designs
+ok 25 - collectDesignArtifacts copies DESIGN_DOC_PATH into .grok-designs
+  ---
+  duration_ms: 10.5991
+  ...
+# Subtest: collectWorkflowArtifacts copies report paths into .grok-workflows
+ok 26 - collectWorkflowArtifacts copies report paths into .grok-workflows
+  ---
+  duration_ms: 10.5493
+  ...
+# Subtest: primaryArtifacts prefers project copies
+ok 27 - primaryArtifacts prefers project copies
+  ---
+  duration_ms: 0.6485
+  ...
+# Subtest: preferPlanArtifactText prefers plan.md over narration
+ok 28 - preferPlanArtifactText prefers plan.md over narration
+  ---
+  duration_ms: 3.7892
+  ...
+# Subtest: parseBabysitInvocation parses add with prs
+ok 29 - parseBabysitInvocation parses add with prs
+  ---
+  duration_ms: 2.7003
+  ...
+# Subtest: parseBabysitInvocation rejects bad action
+ok 30 - parseBabysitInvocation rejects bad action
+  ---
+  duration_ms: 0.6349
+  ...
+# Subtest: parseBabysitInvocation requires prs for add/remove
+ok 31 - parseBabysitInvocation requires prs for add/remove
+  ---
+  duration_ms: 0.3129
+  ...
+# Subtest: buildBabysitPrompt for check
+ok 32 - buildBabysitPrompt for check
+  ---
+  duration_ms: 0.5254
+  ...
+# Subtest: babysitSupportsBackground
+ok 33 - babysitSupportsBackground
+  ---
+  duration_ms: 0.2314
+  ...
+# Subtest: result reconciles reaper-failed plan with result.json and harvests plan.md
+ok 34 - result reconciles reaper-failed plan with result.json and harvests plan.md
+  ---
+  duration_ms: 3928.9949
+  ...
+# Subtest: default capabilities are verify-only and docker push stays denied
+ok 35 - default capabilities are verify-only and docker push stays denied
+  ---
+  duration_ms: 3.8427
+  ...
+# Subtest: buildImage allows compose and still blocks push
+ok 36 - buildImage allows compose and still blocks push
+  ---
+  duration_ms: 1062.0879
+  ...
+# Subtest: push requires sensitive approval, image preview and an immutable tag
+ok 37 - push requires sensitive approval, image preview and an immutable tag
+  ---
+  duration_ms: 3.1529
+  ...
+# Subtest: frozen test globs fail acceptance when oracles change
+ok 38 - frozen test globs fail acceptance when oracles change
+  ---
+  duration_ms: 4120.4012
+  ...
+# Subtest: dirty publish is rejected unless allowDirtyPublish is set
+ok 39 - dirty publish is rejected unless allowDirtyPublish is set
+  ---
+  duration_ms: 3400.1801
+  ...
+# Subtest: failure types distinguish harness, environment and product
+ok 40 - failure types distinguish harness, environment and product
+  ---
+  duration_ms: 2218.24
+  ...
+# Subtest: idle stall skips active tools and heartbeats wake compact wait
+ok 41 - idle stall skips active tools and heartbeats wake compact wait
+  ---
+  duration_ms: 657.4161
+  ...
+# Subtest: P0 without outage evidence is stored as high
+ok 42 - P0 without outage evidence is stored as high
+  ---
+  duration_ms: 0.8233
+  ...
+# Subtest: compact wait ignores telemetry but immediately delivers a permission denial
+ok 43 - compact wait ignores telemetry but immediately delivers a permission denial
+  ---
+  duration_ms: 6.5968
+  ...
+# Subtest: important evidence survives telemetry flooding and restart; gaps are explicit
+ok 44 - important evidence survives telemetry flooding and restart; gaps are explicit
+  ---
+  duration_ms: 18.3991
+  ...
+# Subtest: failure, retry, watchdog, delivery and unknown events stay visible; full mode remains available
+ok 45 - failure, retry, watchdog, delivery and unknown events stay visible; full mode remains available
+  ---
+  duration_ms: 0.6868
+  ...
+# Subtest: timeout and cancellation clean listeners without losing the latest cursor
+ok 46 - timeout and cancellation clean listeners without losing the latest cursor
+  ---
+  duration_ms: 15.5261
+  ...
+# Subtest: compact snapshots preserve review evidence and failures without replaying large context
+ok 47 - compact snapshots preserve review evidence and failures without replaying large context
+  ---
+  duration_ms: 530.3173
+  ...
+# Subtest: MCP exposes summary/full and cursor consistently on all read endpoints
+ok 48 - MCP exposes summary/full and cursor consistently on all read endpoints
+  ---
+  duration_ms: 0.5921
+  ...
+# Subtest: real permission hook denial and tool failure wake compact supervision
+ok 49 - real permission hook denial and tool failure wake compact supervision
+  ---
+  duration_ms: 1.5539
+  ...
+# Subtest: normalizeControlOptions maps sandbox aliases
+ok 50 - normalizeControlOptions maps sandbox aliases
+  ---
+  duration_ms: 2.8485
+  ...
+# Subtest: normalizeControlOptions rejects unknown sandbox
+ok 51 - normalizeControlOptions rejects unknown sandbox
+  ---
+  duration_ms: 0.7506
+  ...
+# Subtest: controlToGrokFields emits plan permission mode
+ok 52 - controlToGrokFields emits plan permission mode
+  ---
+  duration_ms: 0.3823
+  ...
+# Subtest: memory true/false/null map correctly
+ok 53 - memory true/false/null map correctly
+  ---
+  duration_ms: 1.608
+  ...
+# Subtest: controlFromParsedOptions handles --memory and --no-memory
+ok 54 - controlFromParsedOptions handles --memory and --no-memory
+  ---
+  duration_ms: 0.4587
+  ...
+# Subtest: secure defaults auto-approve only explicit project-safe capabilities
+ok 55 - secure defaults auto-approve only explicit project-safe capabilities
+  ---
+  duration_ms: 0.4462
+  ...
+# Subtest: secure defaults reject bypass-permissions and disabled sandbox
+ok 56 - secure defaults reject bypass-permissions and disabled sandbox
+  ---
+  duration_ms: 0.3861
+  ...
+# Subtest: buildGrokArgs emits control surface flags
+ok 57 - buildGrokArgs emits control surface flags
+  ---
+  duration_ms: 0.7176
+  ...
+# Subtest: buildGrokArgs memory off uses --no-memory
+ok 58 - buildGrokArgs memory off uses --no-memory
+  ---
+  duration_ms: 0.3646
+  ...
+# Subtest: parseArgs accumulates array options for allow/deny
+ok 59 - parseArgs accumulates array options for allow/deny
+  ---
+  duration_ms: 0.5198
+  ...
+# Subtest: controlToJobConfig persists schema fields
+ok 60 - controlToJobConfig persists schema fields
+  ---
+  duration_ms: 0.3766
+  ...
+# Subtest: compareSemver works
+ok 61 - compareSemver works
+  ---
+  duration_ms: 0.3974
+  ...
+# Subtest: artifact persistence failure fails every completion indicator
+ok 62 - artifact persistence failure fails every completion indicator
+  ---
+  duration_ms: 3052.7943
+  ...
+# Subtest: durable report contains source, command, acceptance and cleanup evidence
+ok 63 - durable report contains source, command, acceptance and cleanup evidence
+  ---
+  duration_ms: 3232.5786
+  ...
+# Subtest: failed report retry invalidates previously successful stage result
+ok 64 - failed report retry invalidates previously successful stage result
+  ---
+  duration_ms: 2508.6392
+  ...
+# Subtest: verification retry ignores unchanged plugin reports but detects tampering
+ok 65 - verification retry ignores unchanged plugin reports but detects tampering
+  ---
+  duration_ms: 4719.0754
+  ...
+# Subtest: stage preflight fails before probing or executing commands
+ok 66 - stage preflight fails before probing or executing commands
+  ---
+  duration_ms: 938.9863
+  ...
+# Subtest: artifact and stage symlinks cannot escape the workspace
+ok 67 - artifact and stage symlinks cannot escape the workspace
+  ---
+  duration_ms: 897.5766
+  ...
+# Subtest: unknown and infrastructure clusters are not counted as product defects
+ok 68 - unknown and infrastructure clusters are not counted as product defects
+  ---
+  duration_ms: 0.4245
+  ...
+# Subtest: committed oracle changes retain a reviewable baseline diff
+ok 69 - committed oracle changes retain a reviewable baseline diff
+  ---
+  duration_ms: 2304.2662
+  ...
+# Subtest: real verification subprocess streams command progress before completion
+ok 70 - real verification subprocess streams command progress before completion
+  ---
+  duration_ms: 2082.5538
+  ...
+# Subtest: cleanup without ownership proof retains resource
+ok 71 - cleanup without ownership proof retains resource
+  ---
+  duration_ms: 0.6896
+  ...
+# Subtest: cleanup deletes only new resources with this job ownership label
+ok 72 - cleanup deletes only new resources with this job ownership label
+  ---
+  duration_ms: 0.3341
+  ...
+# Subtest: buildDesignPrompt requires brief
+ok 73 - buildDesignPrompt requires brief
+  ---
+  duration_ms: 2.1521
+  ...
+# Subtest: buildDesignPrompt invokes design skill loop
+ok 74 - buildDesignPrompt invokes design skill loop
+  ---
+  duration_ms: 0.455
+  ...
+# Subtest: buildExecutePlanPrompt requires doc or resume
+ok 75 - buildExecutePlanPrompt requires doc or resume
+  ---
+  duration_ms: 0.3897
+  ...
+# Subtest: buildExecutePlanPrompt includes flags
+ok 76 - buildExecutePlanPrompt includes flags
+  ---
+  duration_ms: 0.2662
+  ...
+# Subtest: normalizeDocumentType accepts pptx pdf docx
+ok 77 - normalizeDocumentType accepts pptx pdf docx
+  ---
+  duration_ms: 2.0508
+  ...
+# Subtest: normalizeDocumentType rejects unknown
+ok 78 - normalizeDocumentType rejects unknown
+  ---
+  duration_ms: 0.6404
+  ...
+# Subtest: buildDocumentPrompt includes skill and path marker
+ok 79 - buildDocumentPrompt includes skill and path marker
+  ---
+  duration_ms: 0.6235
+  ...
+# Subtest: mock GROK_BINARY finish path returns usage and text
+ok 80 - mock GROK_BINARY finish path returns usage and text
+  ---
+  duration_ms: 231.3144
+  ...
+# Subtest: buildGrokArgs stop-gate safer posture flags
+ok 81 - buildGrokArgs stop-gate safer posture flags
+  ---
+  duration_ms: 0.5174
+  ...
+# Subtest: parseGrokJsonOutput reads success payload
+ok 82 - parseGrokJsonOutput reads success payload
+  ---
+  duration_ms: 2.7011
+  ...
+# Subtest: parseGrokJsonOutput reads error payload
+ok 83 - parseGrokJsonOutput reads error payload
+  ---
+  duration_ms: 1.6704
+  ...
+# Subtest: buildGrokArgs write mode never uses yolo
+ok 84 - buildGrokArgs write mode never uses yolo
+  ---
+  duration_ms: 0.6816
+  ...
+# Subtest: buildGrokArgs read-only mode uses denylist not allowlist
+ok 85 - buildGrokArgs read-only mode uses denylist not allowlist
+  ---
+  duration_ms: 0.4213
+  ...
+# Subtest: buildGrokArgs media mode avoids tools allowlist and yolo
+ok 86 - buildGrokArgs media mode avoids tools allowlist and yolo
+  ---
+  duration_ms: 0.2816
+  ...
+# Subtest: humanizeGrokFailure maps RequirementError tool dumps
+ok 87 - humanizeGrokFailure maps RequirementError tool dumps
+  ---
+  duration_ms: 0.3937
+  ...
+# Subtest: humanizeGrokFailure maps auth failures
+ok 88 - humanizeGrokFailure maps auth failures
+  ---
+  duration_ms: 0.3927
+  ...
+# Subtest: parseGrokJsonOutput humanizes bare RequirementError text
+ok 89 - parseGrokJsonOutput humanizes bare RequirementError text
+  ---
+  duration_ms: 0.505
+  ...
+# Subtest: formatStreamProgressMessage tails accumulated text
+ok 90 - formatStreamProgressMessage tails accumulated text
+  ---
+  duration_ms: 0.4037
+  ...
+# Subtest: formatStreamProgressMessage is empty until non-whitespace content exists
+ok 91 - formatStreamProgressMessage is empty until non-whitespace content exists
+  ---
+  duration_ms: 0.4065
+  ...
+# Subtest: formatStreamProgressMessage tails thinking with prefix (not single token)
+ok 92 - formatStreamProgressMessage tails thinking with prefix (not single token)
+  ---
+  duration_ms: 0.3615
+  ...
+# Subtest: background wrapper embeds the same progress helper tests exercise
+ok 93 - background wrapper embeds the same progress helper tests exercise
+  ---
+  duration_ms: 0.8034
+  ...
+# Subtest: isTrustedGrokPluginDataDir rejects other plugins like codex
+ok 94 - isTrustedGrokPluginDataDir rejects other plugins like codex
+  ---
+  duration_ms: 2.9282
+  ...
+# Subtest: resolvePluginStateRoot ignores foreign CODEX_PLUGIN_DATA
+ok 95 - resolvePluginStateRoot ignores foreign CODEX_PLUGIN_DATA
+  ---
+  duration_ms: 0.9539
+  ...
+# Subtest: tailLog truncates huge NDJSON status lines
+ok 96 - tailLog truncates huge NDJSON status lines
+  ---
+  duration_ms: 8.4116
+  ...
+# Subtest: refreshJobLiveness does not reaper-fail when result.json exists
+ok 97 - refreshJobLiveness does not reaper-fail when result.json exists
+  ---
+  duration_ms: 1000.9898
+  ...
+# Subtest: shouldAttemptBackgroundFinalize recovers reaper false-failure
+ok 98 - shouldAttemptBackgroundFinalize recovers reaper false-failure
+  ---
+  duration_ms: 4.3863
+  ...
+# Subtest: tryReadResultPayload rejects truncated/corrupt files
+ok 99 - tryReadResultPayload rejects truncated/corrupt files
+  ---
+  duration_ms: 9.4079
+  ...
+# Subtest: refreshJobLiveness fails (not zombies) on corrupt result.json when pid dead
+ok 100 - refreshJobLiveness fails (not zombies) on corrupt result.json when pid dead
+  ---
+  duration_ms: 1484.7177
+  ...
+# Subtest: recordTaskSession keeps multi-session history and latest pointer
+ok 101 - recordTaskSession keeps multi-session history and latest pointer
+  ---
+  duration_ms: 849.3092
+  ...
+# Subtest: recordTaskSession dedupes by sessionId
+ok 102 - recordTaskSession dedupes by sessionId
+  ---
+  duration_ms: 601.3908
+  ...
+# Subtest: resolveJob requires id when multiple jobs are running
+ok 103 - resolveJob requires id when multiple jobs are running
+  ---
+  duration_ms: 1791.6137
+  ...
+# Subtest: loadState migrates v2 lastTaskSessionId into listTaskSessions
+ok 104 - loadState migrates v2 lastTaskSessionId into listTaskSessions
+  ---
+  duration_ms: 362.2796
+  ...
+# Subtest: preflight and cleanup defaults are capability-driven, not project-specific
+ok 105 - preflight and cleanup defaults are capability-driven, not project-specific
+  ---
+  duration_ms: 4.0566
+  ...
+# Subtest: compose bind mounts are resolved relative to the compose file
+ok 106 - compose bind mounts are resolved relative to the compose file
+  ---
+  duration_ms: 11.0197
+  ...
+# Subtest: contract preflight checks declared env vars and extra tools
+ok 107 - contract preflight checks declared env vars and extra tools
+  ---
+  duration_ms: 1177.6355
+  ...
+# Subtest: occupied ports fail preflight
+ok 108 - occupied ports fail preflight
+  ---
+  duration_ms: 248.1028
+  ...
+# Subtest: oracle changes require a reason and include a diff
+ok 109 - oracle changes require a reason and include a diff
+  ---
+  duration_ms: 3951.7954
+  ...
+# Subtest: delivery artifacts write a SHA-256 manifest under artifacts/<jobId>/
+ok 110 - delivery artifacts write a SHA-256 manifest under artifacts/<jobId>/
+  ---
+  duration_ms: 2837.8368
+  ...
+# Subtest: stage jobs are gated and require a successful previous stage result
+ok 111 - stage jobs are gated and require a successful previous stage result
+  ---
+  duration_ms: 653.1487
+  ...
+# Subtest: cleanup planner only touches resources created during the job
+ok 112 - cleanup planner only touches resources created during the job
+  ---
+  duration_ms: 0.683
+  ...
+# Subtest: listToolDefinitions exposes every Grok capability as a Codex tool
+ok 113 - listToolDefinitions exposes every Grok capability as a Codex tool
+  ---
+  duration_ms: 3.5142
+  ...
+# Subtest: depth tools for plan/workflow/design/execute/babysit/document/sessions are present
+ok 114 - depth tools for plan/workflow/design/execute/babysit/document/sessions are present
+  ---
+  duration_ms: 0.4741
+  ...
+# Subtest: every MCP tool accepts an explicit workspace cwd
+ok 115 - every MCP tool accepts an explicit workspace cwd
+  ---
+  duration_ms: 0.5066
+  ...
+# Subtest: MCP companion calls run in the requested workspace
+ok 116 - MCP companion calls run in the requested workspace
+  ---
+  duration_ms: 1026.1602
+  ...
+# Subtest: MCP rejects a missing workspace before spawning the companion
+ok 117 - MCP rejects a missing workspace before spawning the companion
+  ---
+  duration_ms: 1.9735
+  ...
+# Subtest: buildCompanionInvocation maps review arguments to the companion runtime
+ok 118 - buildCompanionInvocation maps review arguments to the companion runtime
+  ---
+  duration_ms: 1.7884
+  ...
+# Subtest: buildCompanionInvocation maps rescue aliases, control flags, and flags
+ok 119 - buildCompanionInvocation maps rescue aliases, control flags, and flags
+  ---
+  duration_ms: 0.6948
+  ...
+# Subtest: buildCompanionInvocation maps plan and execute-plan depth tools
+ok 120 - buildCompanionInvocation maps plan and execute-plan depth tools
+  ---
+  duration_ms: 0.4155
+  ...
+# Subtest: buildCompanionInvocation maps workflow list/run and babysit list
+ok 121 - buildCompanionInvocation maps workflow list/run and babysit list
+  ---
+  duration_ms: 0.4799
+  ...
+# Subtest: buildCompanionInvocation maps sessions and document tools
+ok 122 - buildCompanionInvocation maps sessions and document tools
+  ---
+  duration_ms: 0.5504
+  ...
+# Subtest: stdio MCP transport speaks NDJSON (Codex framing)
+ok 123 - stdio MCP transport speaks NDJSON (Codex framing)
+  ---
+  duration_ms: 1285.6568
+  ...
+# Subtest: encodeGrokSessionWorkspaceKey percent-encodes slashes
+ok 124 - encodeGrokSessionWorkspaceKey percent-encodes slashes
+  ---
+  duration_ms: 3.2207
+  ...
+# Subtest: resolveGrokSessionDir nests under ~/.grok/sessions
+ok 125 - resolveGrokSessionDir nests under ~/.grok/sessions
+  ---
+  duration_ms: 2.3377
+  ...
+# Subtest: copyMediaToDir copies into destination with unique names
+ok 126 - copyMediaToDir copies into destination with unique names
+  ---
+  duration_ms: 14.6742
+  ...
+# Subtest: collectMediaArtifacts copies session files into .grok-media
+ok 127 - collectMediaArtifacts copies session files into .grok-media
+  ---
+  duration_ms: 22.7132
+  ...
+# Subtest: findSessionMediaFiles discovers without relying on text paths
+ok 128 - findSessionMediaFiles discovers without relying on text paths
+  ---
+  duration_ms: 11.3314
+  ...
+# Subtest: extractArtifactPaths expands ~ paths when file exists
+ok 129 - extractArtifactPaths expands ~ paths when file exists
+  ---
+  duration_ms: 5.1731
+  ...
+# Subtest: buildPlanModePrompt requires brief
+ok 130 - buildPlanModePrompt requires brief
+  ---
+  duration_ms: 4.6833
+  ...
+# Subtest: buildPlanModePrompt includes exploration and plan.md guidance
+ok 131 - buildPlanModePrompt includes exploration and plan.md guidance
+  ---
+  duration_ms: 0.7031
+  ...
+# Subtest: installation and executable preflight fail before model dispatch
+ok 132 - installation and executable preflight fail before model dispatch
+  ---
+  duration_ms: 609.9261
+  ...
+# Subtest: workspace lock excludes a second job and can be released
+ok 133 - workspace lock excludes a second job and can be released
+  ---
+  duration_ms: 989.9945
+  ...
+# Subtest: full installed-style execution includes real verifier subprocess and independent evidence
+ok 134 - full installed-style execution includes real verifier subprocess and independent evidence
+  ---
+  duration_ms: 6464.1227
+  ...
+# Subtest: messages arriving during verification are delivered before completion
+ok 135 - messages arriving during verification are delivered before completion
+  ---
+  duration_ms: 889.5599
+  ...
+# Subtest: dead owner is reconciled and historical events are labeled
+ok 136 - dead owner is reconciled and historical events are labeled
+  ---
+  duration_ms: 2338.1703
+  ...
+# Subtest: verifier crash preserves outputs and retry invokes no model
+ok 137 - verifier crash preserves outputs and retry invokes no model
+  ---
+  duration_ms: 3629.6442
+  ...
+# Subtest: batch wait wakes for the second job and cleans every listener
+ok 138 - batch wait wakes for the second job and cleans every listener
+  ---
+  duration_ms: 556.6183
+  ...
+# Subtest: large events page without skipping evidence; summaries use explicit references
+ok 139 - large events page without skipping evidence; summaries use explicit references
+  ---
+  duration_ms: 138.519
+  ...
+# Subtest: metrics distinguish unknown turns, actions and unique files
+ok 140 - metrics distinguish unknown turns, actions and unique files
+  ---
+  duration_ms: 547.6126
+  ...
+# Subtest: ACP refuses an unsupported protocol handshake
+ok 141 - ACP refuses an unsupported protocol handshake
+  ---
+  duration_ms: 97.5866
+  ...
+# Subtest: concurrency limit is enforced before launching another process
+ok 142 - concurrency limit is enforced before launching another process
+  ---
+  duration_ms: 0.4544
+  ...
+# Subtest: minimal command discovery defers unrelated help until requested
+ok 143 - minimal command discovery defers unrelated help until requested
+  ---
+  duration_ms: 6.4795
+  ...
+# Subtest: update cannot claim compatibility from help flags when hooks disappear
+ok 144 - update cannot claim compatibility from help flags when hooks disappear
+  ---
+  duration_ms: 4.3816
+  ...
+# Subtest: renderStatusReport single job shows usage postPending artifacts
+ok 145 - renderStatusReport single job shows usage postPending artifacts
+  ---
+  duration_ms: 5.6429
+  ...
+# Subtest: renderTaskResult shows recoverable findings path on failed post
+ok 146 - renderTaskResult shows recoverable findings path on failed post
+  ---
+  duration_ms: 1.037
+  ...
+# Subtest: renderTaskResult with structured review still shows usage postPending artifacts
+ok 147 - renderTaskResult with structured review still shows usage postPending artifacts
+  ---
+  duration_ms: 0.8652
+  ...
+# Subtest: renderStoredJobResult with review includes enrichment (real result path)
+ok 148 - renderStoredJobResult with review includes enrichment (real result path)
+  ---
+  duration_ms: 0.9708
+  ...
+# Subtest: renderStoredJobResult includes usage from job
+ok 149 - renderStoredJobResult includes usage from job
+  ---
+  duration_ms: 0.476
+  ...
+# Subtest: renderStoredJobResult for plan prefers plan.md over narration
+ok 150 - renderStoredJobResult for plan prefers plan.md over narration
+  ---
+  duration_ms: 9.1638
+  ...
+# Subtest: parseDiffRightLines collects right-side lines
+ok 151 - parseDiffRightLines collects right-side lines
+  ---
+  duration_ms: 3.4995
+  ...
+# Subtest: findingsToPendingReviewPayload omits event and partitions comments
+ok 152 - findingsToPendingReviewPayload omits event and partitions comments
+  ---
+  duration_ms: 1.3134
+  ...
+# Subtest: findingsToPendingReviewPayload requires headSha
+ok 153 - findingsToPendingReviewPayload requires headSha
+  ---
+  duration_ms: 0.937
+  ...
+# Subtest: wantsPostPending reads config and wantPostPending flag
+ok 154 - wantsPostPending reads config and wantPostPending flag
+  ---
+  duration_ms: 0.4552
+  ...
+# Subtest: postPendingAlreadyDone treats ok and skipped as done
+ok 155 - postPendingAlreadyDone treats ok and skipped as done
+  ---
+  duration_ms: 0.4006
+  ...
+# Subtest: postPendingForFinishedJob is null when post-pending not requested
+ok 156 - postPendingForFinishedJob is null when post-pending not requested
+  ---
+  duration_ms: 0.5607
+  ...
+# Subtest: shouldSkipEmptyFindingsPost skips zero findings
+ok 157 - shouldSkipEmptyFindingsPost skips zero findings
+  ---
+  duration_ms: 0.5621
+  ...
+# Subtest: assessDiffForPostPending rejects empty and oversize diffs
+ok 158 - assessDiffForPostPending rejects empty and oversize diffs
+  ---
+  duration_ms: 0.7283
+  ...
+# Subtest: postPendingForFinishedJob skips empty findings without calling gh
+ok 159 - postPendingForFinishedJob skips empty findings without calling gh
+  ---
+  duration_ms: 0.5119
+  ...
+# Subtest: postPendingForFinishedJob skips empty-diff and writes recoverable findings
+ok 160 - postPendingForFinishedJob skips empty-diff and writes recoverable findings
+  ---
+  duration_ms: 11.6124
+  ...
+# Subtest: writeRecoverableReviewFindings writes JSON
+ok 161 - writeRecoverableReviewFindings writes JSON
+  ---
+  duration_ms: 7.6517
+  ...
+# Subtest: postPendingForFinishedJob posts for background-style job (config.postPending)
+ok 162 - postPendingForFinishedJob posts for background-style job (config.postPending)
+  ---
+  duration_ms: 4.6969
+  ...
+# Subtest: postPendingForFinishedJob does not re-post when already ok
+ok 163 - postPendingForFinishedJob does not re-post when already ok
+  ---
+  duration_ms: 0.7032
+  ...
+# Subtest: postPendingForFinishedJob resolves metadata via gh pr view when missing
+ok 164 - postPendingForFinishedJob resolves metadata via gh pr view when missing
+  ---
+  duration_ms: 3.6695
+  ...
+# Subtest: tryParseStructuredReview parses fenced JSON
+ok 165 - tryParseStructuredReview parses fenced JSON
+  ---
+  duration_ms: 4.5456
+  ...
+# Subtest: buildGrokArgs supports best-of-n worktree schema without legacy check flag
+ok 166 - buildGrokArgs supports best-of-n worktree schema without legacy check flag
+  ---
+  duration_ms: 0.8174
+  ...
+# Subtest: buildGrokArgs media mode uses denylist without yolo
+ok 167 - buildGrokArgs media mode uses denylist without yolo
+  ---
+  duration_ms: 0.3082
+  ...
+# Subtest: extractArtifactPaths finds backtick paths
+ok 168 - extractArtifactPaths finds backtick paths
+  ---
+  duration_ms: 1.6327
+  ...
+# Subtest: workspace resolver requires and canonicalizes a Git repository
+ok 169 - workspace resolver requires and canonicalizes a Git repository
+  ---
+  duration_ms: 583.7535
+  ...
+# Subtest: path guard rejects traversal outside the workspace
+ok 170 - path guard rejects traversal outside the workspace
+  ---
+  duration_ms: 197.1729
+  ...
+# Subtest: sensitive files and remote mutations require user approval
+ok 171 - sensitive files and remote mutations require user approval
+  ---
+  duration_ms: 195.9537
+  ...
+# Subtest: environment sanitizer drops unrelated secrets
+ok 172 - environment sanitizer drops unrelated secrets
+  ---
+  duration_ms: 0.5786
+  ...
+# Subtest: dependency certificates are ignored; public certificates pass; private keys do not
+ok 173 - dependency certificates are ignored; public certificates pass; private keys do not
+  ---
+  duration_ms: 193.0385
+  ...
+# Subtest: parseSessionsCliOutput reads uuid lines
+ok 174 - parseSessionsCliOutput reads uuid lines
+  ---
+  duration_ms: 4.9166
+  ...
+# Subtest: native hook registration routes steering only at supported boundaries
+ok 175 - native hook registration routes steering only at supported boundaries
+  ---
+  duration_ms: 7.2567
+  ...
+# Subtest: native hook policy denial is a valid denial response rather than transport failure
+ok 176 - native hook policy denial is a valid denial response rather than transport failure
+  ---
+  duration_ms: 1.4072
+  ...
+# Subtest: unknown tool names cannot silently bypass capability policy
+ok 177 - unknown tool names cannot silently bypass capability policy
+  ---
+  duration_ms: 3.7254
+  ...
+# Subtest: stop hook sends an active continuation for pending steering
+ok 178 - stop hook sends an active continuation for pending steering
+  ---
+  duration_ms: 0.6364
+  ...
+# Subtest: live session configuration uses the string wire value accepted by Grok 1.0.30
+ok 179 - live session configuration uses the string wire value accepted by Grok 1.0.30
+  ---
+  duration_ms: 1.0486
+  ...
+# Subtest: extractUsageFromParsed reads headless json spend fields
+ok 180 - extractUsageFromParsed reads headless json spend fields
+  ---
+  duration_ms: 3.5091
+  ...
+# Subtest: extractUsageFromStdout finds NDJSON end event
+ok 181 - extractUsageFromStdout finds NDJSON end event
+  ---
+  duration_ms: 0.7663
+  ...
+# Subtest: formatUsageSummary returns human string
+ok 182 - formatUsageSummary returns human string
+  ---
+  duration_ms: 0.5674
+  ...
+# Subtest: stream chunks never count as turns; explicit narration triggers warning then stall
+ok 183 - stream chunks never count as turns; explicit narration triggers warning then stall
+  ---
+  duration_ms: 5.1488
+  ...
+# Subtest: a mutation resets narration streak
+ok 184 - a mutation resets narration streak
+  ---
+  duration_ms: 0.6104
+  ...
+# Subtest: real streaming runner persists usage and leaves completion to acceptance
+ok 185 - real streaming runner persists usage and leaves completion to acceptance
+  ---
+  duration_ms: 390.6711
+  ...
+# Subtest: buildWorkflowPrompt requires name
+ok 186 - buildWorkflowPrompt requires name
+  ---
+  duration_ms: 3.9908
+  ...
+# Subtest: buildWorkflowPrompt mentions workflow tool and args
+ok 187 - buildWorkflowPrompt mentions workflow tool and args
+  ---
+  duration_ms: 1.0383
+  ...
+# Subtest: buildWorkflowPrompt validateOnly uses validate_only
+ok 188 - buildWorkflowPrompt validateOnly uses validate_only
+  ---
+  duration_ms: 0.4997
+  ...
+# Subtest: parseWorkflowArgs parses key=value and JSON-ish
+ok 189 - parseWorkflowArgs parses key=value and JSON-ish
+  ---
+  duration_ms: 2.0001
+  ...
+# Subtest: discoverWorkflows finds project rhai files
+ok 190 - discoverWorkflows finds project rhai files
+  ---
+  duration_ms: 13.662
+  ...
+# Subtest: tryParseWorkflowMeta reads name and description
+ok 191 - tryParseWorkflowMeta reads name and description
+  ---
+  duration_ms: 4.1282
+  ...
+1..191
+# tests 191
+# suites 0
+# pass 191
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 25970.9366

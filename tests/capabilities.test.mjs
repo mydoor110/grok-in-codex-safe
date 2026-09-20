@@ -122,7 +122,8 @@ test("failure types distinguish harness, environment and product", () => {
   assert.equal(r.tests[0].failureType, "unknown");
   assert.equal(r.testSummary.failed, 1);
   assert.equal(r.testSummary.unknownFailures, 1);
-  assert.equal(r.testSummary.independentDefects, 1);
+  assert.equal(r.testSummary.independentDefects, 0);
+  assert.equal(r.testSummary.failureClusters, 1);
 });
 
 test("idle stall skips active tools and heartbeats wake compact wait", async () => {

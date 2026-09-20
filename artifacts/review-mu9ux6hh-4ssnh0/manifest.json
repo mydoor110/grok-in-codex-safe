@@ -1,0 +1,12 @@
+{
+  "jobId": "review-mu9ux6hh-4ssnh0",
+  "createdAt": "2026-09-20T13:36:33.687Z",
+  "files": [
+    {
+      "path": "delivery.json",
+      "sha256": "116a951f46c5297262e4440f54c0690e228204ce7834cbd08b219cd2c974e0ed",
+      "bytes": 2857
+    }
+  ],
+  "sha256": "c370cce60f874cd19e8fc6ed1acc0688be992b16a2df52e36f97df1c0168cfee"
+}

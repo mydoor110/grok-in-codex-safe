@@ -68,6 +68,7 @@ export class JobPolicy {
   }
   capabilities() { return effectiveCapabilities(this.job.acceptance, this.job.write !== false); }
   currentAction() {
+    if (this.verificationAction) return { action: this.verificationAction, blocking: "command-running" };
     if (this.activeTools.size) {
       const tool = [...this.activeTools.values()].at(-1);
       return { action: tool.command || tool.name, blocking: tool.command ? "command-running" : "tool-running" };
@@ -76,6 +77,7 @@ export class JobPolicy {
     return { action: this.phase, blocking: "model-turn" };
   }
   progressSnapshot() {
+    if (this.verificationProgress) return this.verificationProgress;
     const todo = this.context.todo || [];
     if (!todo.length) return undefined;
     return { completed: todo.filter(item => item.status === "completed" || item.status === "done").length, total: todo.length };

@@ -1,0 +1,129 @@
+{
+  "status": "failed",
+  "processExited": true,
+  "taskCompleted": false,
+  "acceptancePassed": false,
+  "implementationStatus": "interrupted",
+  "artifactStatus": "produced",
+  "testStatus": "not-run",
+  "infrastructureErrors": [],
+  "reviewStatus": "pending",
+  "integrationStatus": "not-merged",
+  "baseCommit": "5b6e334d1ae1e7ecd96c82984e306faa5c751bc3",
+  "initialHead": "5b6e334d1ae1e7ecd96c82984e306faa5c751bc3",
+  "finalHead": "5b6e334d1ae1e7ecd96c82984e306faa5c751bc3",
+  "resultCommit": null,
+  "workspacePath": "D:\\存放\\王萌博\\code\\grok-in-codex-safe",
+  "worktreePath": "D:\\存放\\王萌博\\code\\grok-in-codex-safe",
+  "workspaceMode": "read-only-workspace",
+  "changedFiles": [
+    {
+      "path": "artifacts/review-mu9ux6hh-4ssnh0/delivery.json",
+      "status": "added"
+    },
+    {
+      "path": "artifacts/review-mu9ux6hh-4ssnh0/manifest.json",
+      "status": "added"
+    },
+    {
+      "path": "docs/codex-grok-efficiency-review-2026-09-20.md",
+      "status": "added"
+    }
+  ],
+  "untrackedFiles": [
+    "artifacts/20260920-delivery-integrity/manifest.json",
+    "artifacts/20260920-delivery-integrity/report.md",
+    "artifacts/20260920-delivery-integrity/test-output.txt",
+    "artifacts/review-mu9ux2by-6h0por/delivery.json",
+    "artifacts/review-mu9ux2by-6h0por/manifest.json",
+    "artifacts/review-mu9ux6hh-4ssnh0/delivery.json",
+    "artifacts/review-mu9ux6hh-4ssnh0/manifest.json",
+    "docs/codex-grok-efficiency-review-2026-09-20.md",
+    "tests/delivery-integrity.test.mjs"
+  ],
+  "worktreeClean": false,
+  "baseIsAncestor": true,
+  "commits": [],
+  "mergeCommits": [],
+  "cherryPickSafety": "not-checked",
+  "tests": [],
+  "testSummary": {
+    "passed": 0,
+    "failed": 0,
+    "harnessFailures": 0,
+    "environmentFailures": 0,
+    "infrastructureFailures": 0,
+    "productFailures": 0,
+    "unknownFailures": 0,
+    "countUnit": "command",
+    "failureClusters": 0,
+    "independentDefects": 0,
+    "clusteringMethod": "heuristic-error-signature",
+    "clusters": []
+  },
+  "oracleChanged": [],
+  "images": [],
+  "productionChanged": false,
+  "remainingRisks": [],
+  "artifacts": null,
+  "cleanup": {
+    "created": {
+      "containers": [],
+      "volumes": [],
+      "networks": [],
+      "images": []
+    },
+    "remaining": [],
+    "cleaned": []
+  },
+  "stageResult": null,
+  "sourceCommit": "5b6e334d1ae1e7ecd96c82984e306faa5c751bc3",
+  "sourceDirty": true,
+  "diffHash": "dff6d209173b60ef1b5880d41751d1595411b59d31a2511abf8dd33b5ee6fb5c",
+  "sourceTreeHash": "d7813343b0625ab0e5f1c648d6cc836741a6193f460e7b853a22ba5fa728fb5a",
+  "publishPreview": [],
+  "capabilities": [
+    "read"
+  ],
+  "stage": null,
+  "acceptanceFailures": [
+    "Read-only task changed the workspace",
+    "Unexpected untracked files: docs/codex-grok-efficiency-review-2026-09-20.md"
+  ],
+  "requestedModel": null,
+  "resolvedModel": "grok-4.6",
+  "modelVersion": null,
+  "reasoningEffort": null,
+  "progress": {
+    "phase": "failed",
+    "completedAt": "2026-09-20T13:38:15.248Z",
+    "verificationSummary": {
+      "passed": false,
+      "failures": [
+        "Read-only task changed the workspace",
+        "Unexpected untracked files: docs/codex-grok-efficiency-review-2026-09-20.md"
+      ],
+      "testsRun": 0,
+      "testSummary": {
+        "passed": 0,
+        "failed": 0,
+        "harnessFailures": 0,
+        "environmentFailures": 0,
+        "infrastructureFailures": 0,
+        "productFailures": 0,
+        "unknownFailures": 0,
+        "countUnit": "command",
+        "failureClusters": 0,
+        "independentDefects": 0,
+        "clusteringMethod": "heuristic-error-signature",
+        "clusters": []
+      }
+    }
+  },
+  "deliveryError": {
+    "code": "ACCEPTANCE_FAILED",
+    "message": "Read-only task changed the workspace; Unexpected untracked files: docs/codex-grok-efficiency-review-2026-09-20.md",
+    "phase": "verifying",
+    "cause": null
+  }
+}
