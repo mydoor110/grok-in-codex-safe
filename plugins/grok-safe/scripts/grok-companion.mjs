@@ -911,7 +911,7 @@ You are a worker supervised by Codex. Work only inside the active Git worktree. 
   try {
   Object.assign(job, prepareExecutionWorkspace({ cwd, jobId: job.id, jobsDir: path.dirname(job.logFile), write: writeMode, worktree,
     worktreeRef: options["worktree-ref"], previous, acceptance }));
-  assertPreviousStage(job.executionPath, job.acceptance?.requires);
+  assertPreviousStage(job.executionPath, job.acceptance?.requires, job.acceptance?.stage);
   } catch (error) {
     job.status = "failed";
     job.error = { code: error.message.startsWith("RESUME_CONTEXT_LOST") ? "RESUME_CONTEXT_LOST" : "WORKSPACE_SETUP_FAILED", message: error.message, phase: "inspecting" };
@@ -1168,7 +1168,7 @@ async function commandWorkflow(argv) {
         "validate-only",
         ...CONTROL_BOOLEAN_OPTIONS
       ],
-      valueOptions: ["model", "effort", "cwd", "arg", ...CONTROL_VALUE_OPTIONS],
+      valueOptions: ["model", "effort", "cwd", "arg", "agent-budget", ...CONTROL_VALUE_OPTIONS],
       arrayOptions: ["arg", ...CONTROL_ARRAY_OPTIONS]
     });
     const name = positionals[0];
@@ -1183,7 +1183,9 @@ async function commandWorkflow(argv) {
     const prompt = buildWorkflowPrompt({
       name,
       args,
-      validateOnly
+      validateOnly,
+      allowSubagents: !control.noSubagents,
+      agentBudget: options["agent-budget"] ? Number(options["agent-budget"]) : 3
     });
     const model = normalizeModel(options.model);
     const effort = normalizeEffort(options.effort, options.model);
@@ -1237,7 +1239,7 @@ async function commandWorkflow(argv) {
 
 async function commandDesign(argv) {
   const expanded = expandArgv(argv);
-  const { options, positionals } = parseArgs(expanded, controlParseConfig());
+  const { options, positionals } = parseArgs(expanded, controlParseConfig([], ["agent-budget"]));
   const cwd = resolveWorkspaceRoot(options.cwd || process.cwd());
   const brief = positionals.join(" ").trim();
   if (!brief) {
@@ -1246,7 +1248,8 @@ async function commandDesign(argv) {
   const control = controlFromParsedOptions(options);
   const model = normalizeModel(options.model || "deep");
   const effort = normalizeEffort(options.effort || "high", options.model || "deep");
-  const prompt = buildDesignPrompt(brief);
+  const prompt = buildDesignPrompt(brief, { allowSubagents: !control.noSubagents,
+    agentBudget: options["agent-budget"] ? Number(options["agent-budget"]) : 3 });
   const jobConfig = controlToJobConfig(control, {});
 
   const job = createJobShell(cwd, {
@@ -1306,6 +1309,7 @@ async function commandExecutePlan(argv) {
       "effort",
       "cwd",
       "concurrency",
+      "agent-budget",
       "instructions",
       "resume",
       ...CONTROL_VALUE_OPTIONS
@@ -1344,7 +1348,9 @@ async function commandExecutePlan(argv) {
     autoPr: Boolean(options["auto-pr"]),
     noGraphite: Boolean(options["no-graphite"]),
     instructions: options.instructions || "",
-    resumePlanId
+    resumePlanId,
+    allowSubagents: !control.noSubagents,
+    agentBudget: options["agent-budget"] ? Number(options["agent-budget"]) : 3
   });
   const jobConfig = controlToJobConfig(control, {});
   // Dry-run must not get --yolo; report linearized order only.

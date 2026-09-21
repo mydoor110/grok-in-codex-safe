@@ -150,7 +150,8 @@ failed-test count as independent product defects; read `testSummary` and `failur
 Before dispatch, the runtime checks the verifier and actual command environment. Read the returned
 baseline warning: an isolated worktree starts from a commit and does not include uncommitted source
 changes. Keep tasks independently verifiable; large-handoff warnings are heuristic and do not replace
-Codex's responsibility to split scope. The default limit is three active jobs per MCP server.
+Codex's responsibility to split scope. The default limit is three active jobs per MCP server;
+additional preflighted jobs remain in a cancellable FIFO queue and start when a slot opens.
 
 Prefer `grok_wait_many` with 1–8 `{jobId,cursor}` targets when supervising several jobs. Preserve
 each cursor, drain `hasMore`, and read referenced evidence before making the corresponding decision.
@@ -160,7 +161,9 @@ Disconnected/interrupted jobs require explicit recovery; do not busy-poll them a
 Use `grok_retry_verification` on a stopped job after repairing verification infrastructure. It runs
 the original acceptance commands without another model call. Check implementationStatus,
 artifactStatus, testStatus and infrastructureErrors independently; reviewStatus=pending still
-requires full Codex review. No tool in this flow approves or merges the result.
+requires full Codex review. After inspecting the complete diff, untracked files and verification
+evidence, call `grok_record_review` with `approved` or `changes-requested` and a concise summary.
+The attestation is bound to the verified source hashes and gates downstream stages. No tool merges it.
 
 Messages advance received → delivered → acknowledged. Acknowledgment means the prompt returned,
 not that the requested change passed acceptance. `interrupt-stopped` confirms the previous prompt
@@ -187,6 +190,9 @@ Use `transport=headless` on rescue only for compatibility; it does not provide n
   Watch `message-delivered` for delivery. Steer waits for a native post-tool/stop boundary;
   interrupt cancels the active prompt and sends a replacement in the same session; queue starts next.
 - `grok_session_config` changes model or effort through the native session interface.
+- ACP records `turn_completed.usage` per round and aggregates it per job. Use
+  `runtime.tokenSoftLimit` and `runtime.tokenHardLimit`; compact responses expose serialized bytes
+  and decision wakeups only as proxies because Codex token usage is not observable here.
 - Reuse `resumeSession`; the runtime preserves baseline and worktree and reuses a warm connection
   when available. Closed connections load the recorded session. Missing context fails explicitly.
 - Verification runs in a separate process, so waiting/checking other jobs remains responsive.

@@ -19,7 +19,7 @@ const SERVER_PATH = path.resolve(
 );
 
 const EXPECTED_TOOLS = [
-  'grok_wait_many', 'grok_retry_verification',
+  'grok_wait_many', 'grok_retry_verification', 'grok_record_review',
   "grok_capabilities", "grok_cli_help", "grok_cli_update", "grok_send", "grok_wait", "grok_events", "grok_session_config", "grok_run",
   "cleanup_worktree", "list_worktrees", "retain_worktree",
   "grok_adversarial_review",
@@ -74,6 +74,14 @@ test("every MCP tool accepts an explicit workspace cwd", () => {
   }
 });
 
+test("MCP exposes explicit bounded subagents and no unsupported bestOfN promise", () => {
+  const rescue = listToolDefinitions().find(tool => tool.name === "grok_rescue").inputSchema.properties;
+  assert.ok(rescue.subagents);
+  assert.equal(rescue.bestOfN, undefined);
+  const workflow = listToolDefinitions().find(tool => tool.name === "grok_workflow").inputSchema.properties;
+  assert.ok(workflow.agentBudget);
+});
+
 test("MCP companion calls run in the requested workspace", async () => {
   const workspace = makeGitWorkspace("grok-mcp-workspace-");
   const response = await runCompanion("grok_status", { cwd: workspace, json: true });
@@ -115,7 +123,6 @@ test("buildCompanionInvocation maps rescue aliases, control flags, and flags", (
     effort: "high",
     worktree: true,
     check: true,
-    bestOfN: 3,
     resume: true,
     sandbox: "workspace-write",
     noSubagents: true,
@@ -132,8 +139,6 @@ test("buildCompanionInvocation maps rescue aliases, control flags, and flags", (
     "high",
     "--worktree",
     "--check",
-    "--best-of-n",
-    "3",
     "--sandbox",
     "workspace-write",
     "--no-subagents",
@@ -174,10 +179,14 @@ test("buildCompanionInvocation maps workflow list/run and babysit list", () => {
     action: "run",
     name: "review-changes",
     validateOnly: true,
-    args: ["scope=branch"]
+    args: ["scope=branch"],
+    subagents: true,
+    agentBudget: 2
   });
   assert.ok(run.args.includes("run"));
   assert.ok(run.args.includes("review-changes"));
+  assert.ok(run.args.includes("--subagents"));
+  assert.ok(run.args.includes("--agent-budget"));
   assert.ok(run.args.includes("--validate-only"));
   assert.ok(run.args.includes("--arg"));
   assert.ok(run.args.includes("scope=branch"));

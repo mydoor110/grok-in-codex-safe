@@ -14,14 +14,17 @@ test('compact wait ignores telemetry but immediately delivers a permission denia
   events.publish('thought', { data: 'thinking' });
   events.publish('text', { data: 'working' });
   events.publish('tool_call', { status: 'in_progress', input: { huge: 'x'.repeat(50000) } });
+  events.publish('tool_call_delta_chunk', { arguments_delta: 'x'.repeat(50000) });
+  events.publish('heartbeat', { status: 'running' });
+  events.publish('pending_interaction');
   await Promise.resolve();
   assert.equal(settled, false);
   events.publish('permission-denied', { reason: 'outside scope' });
   const result = await wait;
   assert.deepEqual(result.events.map(e => e.type), ['permission-denied']);
-  assert.equal(result.cursor, 4);
+  assert.equal(result.cursor, 7);
   assert.equal(events.listenerCount('event'), 0);
-  assert.equal(events.since(0).events.length, 4);
+  assert.equal(events.since(0).events.length, 7);
 });
 
 test('important evidence survives telemetry flooding and restart; gaps are explicit', async () => {
@@ -88,6 +91,14 @@ test('compact snapshots preserve review evidence and failures without replaying 
   assert.deepEqual(runtime.snapshot(worker).events, []);
   assert.equal(runtime.snapshot(worker, 0, 'full').events.length, 1);
   assert.deepEqual(runtime.snapshot(worker, events.revision, 'full').events, []);
+  const incremental = runtime.snapshot(worker, events.revision);
+  assert.equal(incremental.unchanged, true);
+  assert.equal(incremental.availableCommands, undefined);
+  assert.equal(incremental.supervisionMetrics.codexTokensObservable, false);
+  assert.equal(incremental.supervisionMetrics.measurement, 'serialized-response-byte-proxy');
+  assert.ok(incremental.supervisionMetrics.unchangedResponses >= 1);
+  assert.ok(incremental.supervisionMetrics.responseBytes >= incremental.supervisionMetrics.lastResponseBytes);
+  assert.ok(JSON.stringify(incremental).length < JSON.stringify(summary).length / 2);
 });
 
 test('MCP exposes summary/full and cursor consistently on all read endpoints', () => {

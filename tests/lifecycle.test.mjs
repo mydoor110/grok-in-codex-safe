@@ -9,7 +9,7 @@ import {
   normalizeCleanupPolicy, normalizePreflight, planCleanup, runContractPreflight
 } from "../plugins/grok-safe/scripts/lib/preflight.mjs";
 import {
-  assertPreviousStage, gitEvidence, normalizeAcceptance, snapshotWorkspace, verifyDelivery
+  assertPreviousStage, gitEvidence, normalizeAcceptance, snapshotWorkspace, verifyDelivery, writeArtifactManifest, writeReviewAttestation
 } from "../plugins/grok-safe/scripts/lib/acceptance.mjs";
 import { JobPolicy } from "../plugins/grok-safe/scripts/lib/job-policy.mjs";
 import { normalizeControlOptions } from "../plugins/grok-safe/scripts/lib/control.mjs";
@@ -120,8 +120,11 @@ test("stage jobs are gated and require a successful previous stage result", () =
   fs.mkdirSync(path.join(cwd, "artifacts", "prev"), { recursive: true });
   fs.writeFileSync(path.join(cwd, "artifacts", "prev", "delivery.json"), JSON.stringify({ status: "failed" }));
   assert.throws(() => assertPreviousStage(cwd, "artifacts/prev/delivery.json"), /not successful/);
-  fs.writeFileSync(path.join(cwd, "artifacts", "prev", "delivery.json"), JSON.stringify({ status: "completed" }));
-  assert.doesNotThrow(() => assertPreviousStage(cwd, "artifacts/prev/delivery.json"));
+  writeArtifactManifest(cwd, "prev", [], { status: "completed", taskCompleted: true, acceptancePassed: true,
+    stage: "inspect", diffHash: "diff", sourceTreeHash: "tree", sourceCommit: "commit", deliveryError: null });
+  writeReviewAttestation(cwd, "artifacts/prev/delivery.json", { decision: "approved", summary: "Reviewed the stage evidence." });
+  assert.doesNotThrow(() => assertPreviousStage(cwd, "artifacts/prev/delivery.json", "implement"));
+  assert.throws(() => assertPreviousStage(cwd, "artifacts/prev/delivery.json", "inspect"), /order is invalid/);
   const implement = normalizeAcceptance({
     stage: "implement", expectedChange: true, capabilities: ["read", "edit", "test", "buildImage"]
   }, control);

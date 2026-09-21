@@ -3,20 +3,20 @@ import { EventEmitter } from "node:events";
 import readline from 'node:readline';
 
 // Only suppress known routine telemetry. Unknown events and failures remain visible.
-// Heartbeats are supervision events so a long-running command can wake grok_wait.
+const ROUTINE_EVENTS = new Set([
+  "text", "thought", "hook", "usage", "heartbeat", "tool_call", "tool_call_update", "tool_call_delta_chunk",
+  "tool-start", "hook_execution", "hook_annotation", "pending_interaction", "interaction_resolved",
+  "available_commands_update", "session_info_update", "session_summary_generated", "session_state",
+  "response_completed", "turn_completed", "last_turn_summary", "protocol-telemetry"
+]);
 export function supervisionEvent(event) {
   if (event.error || ["failed", "error", "denied", "blocked", "cancelled"].includes(event.status) || (event.exitCode != null && event.exitCode !== 0)) return true;
-  if (event.type === "heartbeat") return true;
-  return !["text", "thought", "hook", "usage", "tool_call", "tool_call_update", "tool-start"].includes(event.type)
+  return !ROUTINE_EVENTS.has(event.type)
     && !(event.type === "command-finished" && event.exitCode === 0);
 }
 
 function rememberImportant(store, event, maxEntries) {
   if (!supervisionEvent(event)) return;
-  if (event.type === "heartbeat") {
-    const idx = store.important.findLastIndex(item => item.type === "heartbeat");
-    if (idx >= 0) store.important.splice(idx, 1);
-  }
   store.important.push(event);
   if (store.important.length > maxEntries) store.importantDroppedThrough = store.important.shift().revision;
 }
@@ -96,6 +96,13 @@ export function normalizeGrokEvent(message) {
     kind: event.kind, status: event.status, input: event.rawInput || event.input, output: event.rawOutput, locations: event.locations, content: event.content };
   if (type === "plan") return { type: "plan", entries: event.entries || [] };
   if (type === "usage_update") return { type: "usage", usage: event };
+  if (type === "turn_completed") return { type, usage: event.usage || null, stopReason: event.stop_reason || event.stopReason,
+    promptId: event.prompt_id || event.promptId, elapsedMs: event.elapsed_ms || event.elapsedMs };
   if (type === "content_block_delta") return { type: event.delta?.type === "thinking_delta" ? "thought" : "text", data: event.delta?.text || event.delta?.thinking || "" };
+  if (message.method === "_x.ai/sessions/changed" || message.method === "x.ai/sessions/changed") {
+    const current = message.params?.upserted?.[0];
+    return { type: "session_state", sessionId: current?.sessionId, model: current?.modelId, effort: current?.reasoningEffort, activity: current?.activity };
+  }
+  if (["_x.ai/mcp_initialized", "_x.ai/mcp/servers_updated"].includes(message.method)) return { type: "protocol-telemetry", method: message.method };
   return type ? { ...event, type } : { type: 'protocol-notification', method: message.method, payload: event };
 }

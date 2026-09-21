@@ -20,6 +20,8 @@ test("buildWorkflowPrompt mentions workflow tool and args", () => {
   assert.match(p, /review-changes/);
   assert.match(p, /workflow tool/i);
   assert.match(p, /"target":"main"/);
+  assert.match(p, /without subagents/i);
+  assert.match(buildWorkflowPrompt({ name: "x", allowSubagents: true, agentBudget: 2 }), /at most 2 active agents/i);
 });
 
 test("buildWorkflowPrompt validateOnly uses validate_only", () => {

@@ -238,7 +238,7 @@ export function summarizeTests(tests = []) {
     clusteringMethod: "heuristic-error-signature", clusters };
 }
 
-export function assertPreviousStage(cwd, relative) {
+export function assertPreviousStage(cwd, relative, currentStage = null) {
   if (!relative) return;
   const full = path.resolve(cwd, relative);
   const rel = path.relative(path.resolve(cwd), full);
@@ -250,6 +250,61 @@ export function assertPreviousStage(cwd, relative) {
   try { parsed = JSON.parse(fs.readFileSync(full, "utf8")); }
   catch { throw new Error(`Required previous stage result is not JSON: ${relative}`); }
   if (!["success", "completed"].includes(parsed.status)) throw new Error(`Previous stage is not successful: ${relative} (${parsed.status || "unknown"})`);
+  if (parsed.taskCompleted !== true || parsed.acceptancePassed !== true || parsed.deliveryError) {
+    throw new Error(`Previous stage lacks successful acceptance evidence: ${relative}`);
+  }
+  if (!parsed.diffHash || !parsed.sourceTreeHash || !parsed.sourceCommit) {
+    throw new Error(`Previous stage lacks source integrity evidence: ${relative}`);
+  }
+  if (currentStage) {
+    const previousIndex = STAGES.indexOf(parsed.stage);
+    const currentIndex = STAGES.indexOf(currentStage);
+    if (previousIndex < 0 || currentIndex < 0 || previousIndex >= currentIndex) {
+      throw new Error(`Previous stage order is invalid: ${parsed.stage || "unknown"} -> ${currentStage}`);
+    }
+  }
+  const manifestPath = path.join(path.dirname(full), "manifest.json");
+  if (!fs.existsSync(manifestPath)) throw new Error(`Previous stage manifest is missing: ${relative}`);
+  let manifest;
+  try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); }
+  catch { throw new Error(`Previous stage manifest is not JSON: ${relative}`); }
+  const expectedManifestHash = createHash("sha256").update(JSON.stringify({ jobId: manifest.jobId, files: manifest.files })).digest("hex");
+  if (manifest.sha256 !== expectedManifestHash) throw new Error(`Previous stage manifest hash is invalid: ${relative}`);
+  const deliveryEntry = manifest.files?.find(file => file.path === path.basename(full));
+  const delivery = fs.readFileSync(full);
+  if (!deliveryEntry || deliveryEntry.bytes !== delivery.length || deliveryEntry.sha256 !== createHash("sha256").update(delivery).digest("hex")) {
+    throw new Error(`Previous stage delivery hash is invalid: ${relative}`);
+  }
+  const reviewPath = path.join(path.dirname(full), "codex-review.json");
+  if (!fs.existsSync(reviewPath)) throw new Error(`Previous stage lacks a Codex review attestation: ${relative}`);
+  let review;
+  try { review = JSON.parse(fs.readFileSync(reviewPath, "utf8")); }
+  catch { throw new Error(`Previous stage Codex review is not JSON: ${relative}`); }
+  const { sha256, ...reviewPayload } = review;
+  const reviewHash = createHash("sha256").update(JSON.stringify(reviewPayload)).digest("hex");
+  if (sha256 !== reviewHash || review.decision !== "approved" || review.jobId !== manifest.jobId ||
+      review.diffHash !== parsed.diffHash || review.sourceTreeHash !== parsed.sourceTreeHash) {
+    throw new Error(`Previous stage Codex review is invalid or stale: ${relative}`);
+  }
+  return parsed;
+}
+
+export function writeReviewAttestation(cwd, stageResult, { decision, summary, reviewer = "codex" }) {
+  if (!['approved', 'changes-requested'].includes(decision) || !summary?.trim()) throw new Error("Review decision and summary are required");
+  const full = path.resolve(cwd, stageResult);
+  const relative = path.relative(path.resolve(cwd), full);
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) || !fs.existsSync(full)) throw new Error("Review stage result is outside the workspace or missing");
+  const realRelative = path.relative(fs.realpathSync(cwd), fs.realpathSync(full));
+  if (realRelative === ".." || realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) throw new Error("Review stage result escapes the workspace");
+  const report = JSON.parse(fs.readFileSync(full, "utf8"));
+  const manifest = JSON.parse(fs.readFileSync(path.join(path.dirname(full), "manifest.json"), "utf8"));
+  const payload = { schemaVersion: 1, jobId: manifest.jobId, decision, summary: summary.trim(), reviewer,
+    reviewedAt: new Date().toISOString(), diffHash: report.diffHash, sourceTreeHash: report.sourceTreeHash, sourceCommit: report.sourceCommit };
+  const review = { ...payload, sha256: createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
+  const reviewPath = path.join(path.dirname(full), "codex-review.json");
+  if (fs.existsSync(reviewPath) && fs.lstatSync(reviewPath).isSymbolicLink()) throw new Error("Review path contains a symbolic link");
+  fs.writeFileSync(reviewPath, `${JSON.stringify(review, null, 2)}\n`);
+  return { review, path: path.relative(cwd, reviewPath).replace(/\\/g, "/") };
 }
 
 export function oracleDiff(cwd, file, base = "HEAD") {
@@ -290,8 +345,10 @@ export function writeArtifactManifest(cwd, jobId, files, report) {
   fs.mkdirSync(dir, { recursive: true });
   const deliveryPath = safeDestination(path.join(dir, "delivery.json"));
   const manifestPath = safeDestination(path.join(dir, "manifest.json"));
+  const reviewPath = safeDestination(path.join(dir, "codex-review.json"));
   // A failed retry must never leave an earlier successful stage result consumable.
   fs.rmSync(deliveryPath, { force: true });
+  fs.rmSync(reviewPath, { force: true });
   const entries = [];
   for (const file of files || []) {
     const src = path.resolve(cwd, file);
@@ -326,7 +383,7 @@ export function verifyDelivery(job, processOk, exitCode, onProgress = () => {}) 
   let final = null, changedFiles = [], untrackedFiles = [], baseIsAncestor = false, commits = [], mergeCommits = [];
   try {
     if (job.write && !job.initialSnapshot) throw new Error("Missing initial workspace evidence");
-    assertPreviousStage(cwd, acceptance.requires);
+    assertPreviousStage(cwd, acceptance.requires, acceptance.stage);
     if (job.write || job.initialSnapshot || acceptance.requiredCommands?.length || acceptance.requiredArtifacts?.length) {
       // Execute only caller-specified, preflighted commands. Model prose is never test evidence.
       for (const command of processOk ? acceptance.requiredCommands || [] : []) {

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { gitEvidence, snapshotWorkspace, verifyDelivery, summarizeTests, writeArtifactManifest, assertPreviousStage } from '../plugins/grok-safe/scripts/lib/acceptance.mjs';
+import { gitEvidence, snapshotWorkspace, verifyDelivery, summarizeTests, writeArtifactManifest, assertPreviousStage, writeReviewAttestation } from '../plugins/grok-safe/scripts/lib/acceptance.mjs';
 import { preflightExecution, executeCleanup } from '../plugins/grok-safe/scripts/lib/preflight.mjs';
 import { GrokSupervisor } from '../plugins/grok-safe/scripts/lib/supervisor.mjs';
 import { JobPolicy } from '../plugins/grok-safe/scripts/lib/job-policy.mjs';
@@ -62,6 +62,52 @@ test('failed report retry invalidates previously successful stage result', () =>
   assert.equal(first.status, 'completed');
   assert.throws(() => writeArtifactManifest(cwd, job.id, ['missing.txt'], { status: 'completed' }), /missing/);
   assert.throws(() => assertPreviousStage(cwd, first.stageResult), /missing/);
+});
+
+test('stage requirements reject forged status-only and tampered delivery evidence', () => {
+  const { cwd, job } = fixture();
+  fs.mkdirSync(path.join(cwd, 'artifacts', 'status-only'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, 'artifacts', 'status-only', 'delivery.json'), JSON.stringify({ status: 'completed' }));
+  assert.throws(() => assertPreviousStage(cwd, 'artifacts/status-only/delivery.json'), /acceptance evidence/);
+  job.acceptance.stage = 'inspect';
+  job.acceptance.expectedChange = true;
+  const result = verifyDelivery(job, true, 0);
+  assert.equal(result.status, 'incomplete');
+  const report = JSON.parse(fs.readFileSync(path.join(cwd, result.stageResult), 'utf8'));
+  report.status = 'completed';
+  report.taskCompleted = true;
+  report.acceptancePassed = true;
+  report.deliveryError = null;
+  fs.writeFileSync(path.join(cwd, result.stageResult), JSON.stringify(report));
+  assert.throws(() => assertPreviousStage(cwd, result.stageResult, 'implement'), /delivery hash is invalid/);
+});
+
+test('stage requirements bind a Codex approval to the verified source hashes', () => {
+  const { cwd, job } = fixture();
+  const result = verifyDelivery(job, true, 0);
+  assert.equal(result.status, 'completed');
+  assert.throws(() => assertPreviousStage(cwd, result.stageResult), /review attestation/);
+  writeReviewAttestation(cwd, result.stageResult, { decision: 'approved', summary: 'Diff and evidence reviewed.' });
+  assert.doesNotThrow(() => assertPreviousStage(cwd, result.stageResult));
+  const reviewPath = path.join(cwd, path.dirname(result.stageResult), 'codex-review.json');
+  const review = JSON.parse(fs.readFileSync(reviewPath, 'utf8'));
+  review.diffHash = 'stale';
+  fs.writeFileSync(reviewPath, JSON.stringify(review));
+  assert.throws(() => assertPreviousStage(cwd, result.stageResult), /invalid or stale/);
+});
+
+test('supervisor records a review only while verified workspace evidence is current', () => {
+  const { cwd, job } = fixture();
+  Object.assign(job, verifyDelivery(job, true, 0));
+  const runtime = new GrokSupervisor();
+  runtime.persist = () => {};
+  runtime.workers.set(job.id, { job, events: new JobEvents(), policy: { metrics: {} } });
+  const reviewed = runtime.recordReview(cwd, job.id, { decision: 'approved', summary: 'Reviewed full diff and evidence.' });
+  assert.equal(reviewed.reviewStatus, 'approved');
+  assert.equal(reviewed.reviewedDiffHash, job.diffHash);
+  assert.ok(fs.existsSync(path.join(cwd, reviewed.reviewFile)));
+  fs.writeFileSync(path.join(cwd, 'source.txt'), 'changed after review\n');
+  assert.throws(() => runtime.recordReview(cwd, job.id, { decision: 'approved', summary: 'Stale approval.' }), /REVIEW_STALE/);
 });
 
 test('verification retry ignores unchanged plugin reports but detects tampering', () => {

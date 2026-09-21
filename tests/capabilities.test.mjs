@@ -126,7 +126,7 @@ test("failure types distinguish harness, environment and product", () => {
   assert.equal(r.testSummary.failureClusters, 1);
 });
 
-test("idle stall skips active tools and heartbeats wake compact wait", async () => {
+test("idle stall skips active tools and routine heartbeats do not wake compact wait", async () => {
   const cwd = repo();
   const events = [];
   const policy = new JobPolicy(
@@ -145,13 +145,17 @@ test("idle stall skips active tools and heartbeats wake compact wait", async () 
   assert.equal(writeWatchShouldStall(0, 200000, 0), true);
   assert.equal(writeWatchShouldStall(0, 200000, 1), false);
   const log = new JobEvents();
-  const wait = log.wait(0, 1000, undefined, true);
+  let settled = false;
+  const wait = log.wait(0, 1000, undefined, true).then(value => { settled = true; return value; });
   log.publish("heartbeat", { phase: "verifying", currentAction: "npm test" });
-  assert.equal((await wait).events[0].type, "heartbeat");
+  await Promise.resolve();
+  assert.equal(settled, false);
   log.publish("heartbeat", { phase: "verifying", currentAction: "still running" });
   log.publish("heartbeat", { phase: "verifying", currentAction: "still running 2" });
-  assert.equal(log.since(0, true).events.filter(event => event.type === "heartbeat").length, 1);
-  assert.equal(supervisionEvent({ type: "heartbeat" }), true);
+  log.publish("stall-warning", { phase: "verifying" });
+  assert.equal((await wait).events[0].type, "stall-warning");
+  assert.equal(log.since(0, true).events.filter(event => event.type === "heartbeat").length, 0);
+  assert.equal(supervisionEvent({ type: "heartbeat" }), false);
 });
 
 test("P0 without outage evidence is stored as high", () => {

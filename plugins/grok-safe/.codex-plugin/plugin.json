@@ -1,6 +1,6 @@
 {
   "name": "grok-safe",
-  "version": "0.5.8-safe.1+codex.20260920104325",
+  "version": "0.5.8-safe.1+codex.20260920141849",
   "description": "Independent derivative of stdevMac/grok-in-codex 0.5.8: Codex-supervised Grok worker with fail-closed permissions.",
   "author": {
     "name": "mydoor110 (independent derivative of stdevMac/grok-in-codex)",

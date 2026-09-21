@@ -7,7 +7,7 @@ import { assertCommandCapability, commandCapability, effectiveCapabilities, muta
 export const RUNTIME_DEFAULTS = { maxNarrationOnlyTurns: 2, inspectionTurns: 4, editingTurns: 24, verificationTurns: 8,
   packagingTurns: 8, publishingTurns: 4,
   inspectionSeconds: 600, editingSeconds: 1800, verificationSeconds: 600, packagingSeconds: 1800, publishingSeconds: 600,
-  maxRecoveryAttempts: 2, idleSeconds: 300, heartbeatSeconds: 15 };
+  maxRecoveryAttempts: 2, idleSeconds: 300, heartbeatSeconds: 15, tokenSoftLimit: 0, tokenHardLimit: 0 };
 const PHASE_BUDGET = {
   inspecting: { seconds: "inspectionSeconds", turns: "inspectionTurns" },
   editing: { seconds: "editingSeconds", turns: "editingTurns" },
@@ -15,11 +15,18 @@ const PHASE_BUDGET = {
   packaging: { seconds: "packagingSeconds", turns: "packagingTurns" },
   publishing: { seconds: "publishingSeconds", turns: "publishingTurns" }
 };
+const runtimeLimit = key => key.startsWith("token") ? { minimum: 0, maximum: 1000000000 } :
+  { minimum: 1, maximum: key.endsWith("Seconds") ? 86400 : 1000 };
 export const RUNTIME_SCHEMA = { type: "object", additionalProperties: false, properties:
-  Object.fromEntries(Object.keys(RUNTIME_DEFAULTS).map(key => [key, { type: "integer", minimum: 1, maximum: key.endsWith("Seconds") ? 86400 : 1000 }])) };
+  Object.fromEntries(Object.keys(RUNTIME_DEFAULTS).map(key => [key, { type: "integer", ...runtimeLimit(key) }])) };
 export function normalizeRuntime(value = {}) {
-  for (const [key, item] of Object.entries(value)) if (!Object.hasOwn(RUNTIME_DEFAULTS, key) || !Number.isInteger(item) || item < 1 || item > (key.endsWith("Seconds") ? 86400 : 1000)) throw new Error(`Invalid runtime budget: ${key}`);
-  return { ...RUNTIME_DEFAULTS, ...value };
+  for (const [key, item] of Object.entries(value)) {
+    const limits = runtimeLimit(key);
+    if (!Object.hasOwn(RUNTIME_DEFAULTS, key) || !Number.isInteger(item) || item < limits.minimum || item > limits.maximum) throw new Error(`Invalid runtime budget: ${key}`);
+  }
+  const result = { ...RUNTIME_DEFAULTS, ...value };
+  if (result.tokenSoftLimit && result.tokenHardLimit && result.tokenSoftLimit > result.tokenHardLimit) throw new Error("tokenSoftLimit cannot exceed tokenHardLimit");
+  return result;
 }
 export function workspacePath(root, value) {
   const full = path.resolve(root, value || ".");
@@ -54,7 +61,8 @@ export function checkSensitive(file, text, policy = {}) {
 }
 export function commandAllowed(command, control) {
   if (!command || /[\r\n;&|<>`$]/.test(command)) return false;
-  const match = rule => rule === "Bash" || /^Bash\(.*\)$/.test(rule) && matchesPath(command, rule.slice(5, -1));
+  const commandPattern = value => new RegExp(`^${String(value).split("*").map(part => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`);
+  const match = rule => rule === "Bash" || /^Bash\(.*\)$/.test(rule) && commandPattern(rule.slice(5, -1)).test(command);
   return control.allow.some(match) && !control.deny.some(match);
 }
 
@@ -109,7 +117,7 @@ export class JobPolicy {
     if (now - this.lastActivity > this.runtime.idleSeconds * 1000) return { code: "STALLED", phase: this.phase, recoverable: true };
     return null;
   }
-  inspectFile(value) {
+  inspectFile(value, { track = true } = {}) {
     const full = workspacePath(this.job.executionPath, value);
     if (!fs.existsSync(full) || !fs.statSync(full).isFile()) return null;
     const relative = path.relative(this.job.executionPath, full).replace(/\\/g, "/");
@@ -118,19 +126,23 @@ export class JobPolicy {
     const content = fs.readFileSync(full, "utf8"); checkSensitive(relative, content, this.job.security || {});
     const hash = createHash("sha256").update(content).digest("hex"); const previous = this.reads.get(relative);
     const duplicate = previous?.hash === hash;
-    this.metrics.readVersions += duplicate ? 0 : 1; this.metrics.duplicateReads += duplicate ? 1 : 0;
-    if (!duplicate) this.lastProgress = Date.now();
-    if (duplicate && this.metrics.duplicateReads % 5 === 0) this.publish('stall-warning', { reason: 'Repeated unchanged file reads', file: relative, recommendation: 'Use existing findings and attempt one bounded edit or test.' });
+    if (track) {
+      this.metrics.readVersions += duplicate ? 0 : 1; this.metrics.duplicateReads += duplicate ? 1 : 0;
+      if (!duplicate) this.lastProgress = Date.now();
+      if (duplicate && this.metrics.duplicateReads % 5 === 0) this.publish('stall-warning', { reason: 'Repeated unchanged file reads', file: relative, recommendation: 'Use existing findings and attempt one bounded edit or test.' });
+    }
     const entry = { path: relative, hash, bytes: stat.size, duplicate, summary: content.split(/\r?\n/).filter(l => /^(?:export |class |def |function |#|import )/.test(l)).slice(0, 12).join("\n").slice(0, 1600) };
-    this.reads.set(relative, entry); this.metrics.filesRead = this.reads.size; return { ...entry, content };
+    if (track) { this.reads.set(relative, entry); this.metrics.filesRead = this.reads.size; }
+    return { ...entry, content };
   }
   before(event) {
     this.lastActivity = Date.now();
     const name = String(event.toolName || ""), input = event.toolInput || {};
     const command = input.command;
-    const locations = [input.path, input.file_path, input.filePath, input.target_file, ...(Array.isArray(input.paths) ? input.paths : [])].filter(v => typeof v === "string");
+    const locations = [input.path, input.file_path, input.filePath, input.target_file, input.target_directory, input.targetDirectory,
+      ...(Array.isArray(input.paths) ? input.paths : [])].filter(v => typeof v === "string");
     const mutation = /write|edit|replace|patch/i.test(name);
-    const known = /^(?:read|read_file|read_text_file|grep|glob|ls|list_directory|search|write|write_file|edit|edit_file|search_replace|apply_patch|bash|shell|run_terminal_cmd|run_terminal_command|terminal|update_plan)$/i.test(name);
+    const known = /^(?:read|read_file|read_text_file|grep|glob|ls|list_dir|list_directory|search|write|write_file|edit|edit_file|search_replace|apply_patch|bash|shell|run_terminal_cmd|run_terminal_command|terminal|update_plan)$/i.test(name);
     const subagent = /^(?:task|spawn_subagent|subagent)$/i.test(name), web = /web_search|web_fetch|browse/i.test(name);
     if (!known && !subagent && !web && !this.job.control.allow.includes(name)) throw new Error(`Tool capability has not been authorized: ${name}`);
     if (this.job.control.deny.some(rule => rule.toLowerCase() === name.toLowerCase())) throw new Error(`Tool denied: ${name}`);

@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   extractUsageFromParsed,
   extractUsageFromStdout,
-  formatUsageSummary
+  formatUsageSummary,
+  normalizeUsage,
+  aggregateUsage
 } from "../plugins/grok-safe/scripts/lib/usage.mjs";
 
 test("extractUsageFromParsed reads headless json spend fields", () => {
@@ -25,6 +27,18 @@ test("extractUsageFromParsed reads headless json spend fields", () => {
   assert.equal(usage.input_tokens, 100);
   assert.equal(usage.total_tokens, 150);
   assert.ok(usage.modelUsage);
+});
+
+test("normalizes and aggregates ACP turn_completed camelCase usage", () => {
+  const first = normalizeUsage({ inputTokens: 100, outputTokens: 20, totalTokens: 120,
+    cachedReadTokens: 64, reasoningTokens: 9, modelCalls: 2, numTurns: 2 }, { source: "turn_completed", round: 1 });
+  const second = normalizeUsage({ inputTokens: 40, outputTokens: 5, totalTokens: 45,
+    cachedReadTokens: 32, reasoningTokens: 3, modelCalls: 1, numTurns: 1 }, { source: "turn_completed", round: 2 });
+  assert.equal(first.cache_read_input_tokens, 64);
+  const total = aggregateUsage([first, second]);
+  assert.equal(total.total_tokens, 165);
+  assert.equal(total.model_calls, 3);
+  assert.equal(total.rounds, 2);
 });
 
 test("extractUsageFromStdout finds NDJSON end event", () => {

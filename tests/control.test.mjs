@@ -11,6 +11,7 @@ import {
   normalizeControlOptions
 } from "../plugins/grok-safe/scripts/lib/control.mjs";
 import { buildGrokArgs } from "../plugins/grok-safe/scripts/lib/grok.mjs";
+import { normalizeRuntime } from "../plugins/grok-safe/scripts/lib/job-policy.mjs";
 import { parseArgs } from "../plugins/grok-safe/scripts/lib/args.mjs";
 
 test("normalizeControlOptions maps sandbox aliases", () => {
@@ -52,6 +53,12 @@ test("secure defaults auto-approve only explicit project-safe capabilities", () 
   assert.ok(control.allow.includes("Edit"));
   assert.ok(control.allow.includes("Bash(npm test*)"));
   assert.ok(control.deny.includes("Bash(git push*)"));
+});
+
+test("subagents require an explicit opt-in", () => {
+  assert.equal(normalizeControlOptions({}).noSubagents, true);
+  assert.equal(normalizeControlOptions({ subagents: true }).noSubagents, false);
+  assert.equal(controlFromParsedOptions({ subagents: true }).noSubagents, false);
 });
 
 test("secure defaults reject bypass-permissions and disabled sandbox", () => {
@@ -131,4 +138,10 @@ test("compareSemver works", () => {
   assert.ok(compareSemver("0.2.117", "0.2.118") < 0);
   assert.ok(compareSemver("0.2.119", "0.2.118") > 0);
   assert.ok(compareSemver("grok 0.2.118 (abc)", "0.2.100") > 0);
+});
+
+test("runtime token budgets are optional, bounded, and ordered", () => {
+  assert.equal(normalizeRuntime({}).tokenHardLimit, 0);
+  assert.equal(normalizeRuntime({ tokenSoftLimit: 1000, tokenHardLimit: 2000 }).tokenSoftLimit, 1000);
+  assert.throws(() => normalizeRuntime({ tokenSoftLimit: 3000, tokenHardLimit: 2000 }), /cannot exceed/);
 });

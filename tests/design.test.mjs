@@ -14,6 +14,8 @@ test("buildDesignPrompt invokes design skill loop", () => {
   assert.match(p, /DESIGN_DOC_PATH/);
   assert.match(p, /PR Plan/);
   assert.match(p, /spawn_subagent|writer|reviewer/i);
+  assert.match(p, /subagents are disabled/i);
+  assert.match(buildDesignPrompt("x", { allowSubagents: true, agentBudget: 2 }), /maximum 2 active agents/i);
 });
 
 test("buildExecutePlanPrompt requires doc or resume", () => {
@@ -33,4 +35,5 @@ test("buildExecutePlanPrompt includes flags", () => {
   assert.match(p, /--auto-pr/);
   assert.match(p, /--no-graphite/);
   assert.match(p, /--concurrency 2/);
+  assert.match(p, /sequentially because subagents are disabled/i);
 });

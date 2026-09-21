@@ -18,12 +18,12 @@ Reshape a rescue request into a tighter prompt before the single `task` call.
 ## Do
 
 - Preserve file names, errors, and commands the user mentioned
+- Inspect enough of the repository to define interfaces, invariants, dependencies, and acceptance checks before delegating
 - Ask for verification via tests/build when fixing bugs
 - Keep it short
 
 ## Do not
 
-- Inspect the repo yourself
 - Invent stack traces
 - Solve the problem in the prompt
 - Embed model/effort/resume flags in the natural-language body

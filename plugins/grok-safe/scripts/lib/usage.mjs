@@ -1,6 +1,49 @@
 /**
  * Extract spend/usage fields from headless Grok JSON (or streaming end event).
  */
+const number = (...values) => values.find(value => typeof value === "number" && Number.isFinite(value)) ?? null;
+
+/** Normalize headless snake_case and ACP camelCase usage into one schema. */
+export function normalizeUsage(raw, metadata = {}) {
+  if (!raw || typeof raw !== "object") return null;
+  const usage = raw.usage && typeof raw.usage === "object" ? raw.usage : raw;
+  const normalized = {
+    input_tokens: number(usage.input_tokens, usage.inputTokens),
+    output_tokens: number(usage.output_tokens, usage.outputTokens),
+    total_tokens: number(usage.total_tokens, usage.totalTokens),
+    cache_read_input_tokens: number(usage.cache_read_input_tokens, usage.cachedReadTokens),
+    cache_creation_input_tokens: number(usage.cache_creation_input_tokens, usage.cacheCreationTokens),
+    reasoning_tokens: number(usage.reasoning_tokens, usage.reasoningTokens),
+    model_calls: number(usage.model_calls, usage.modelCalls),
+    api_duration_ms: number(usage.api_duration_ms, usage.apiDurationMs),
+    cost_usd_ticks: number(usage.cost_usd_ticks, usage.costUsdTicks),
+    total_cost_usd: number(raw.total_cost_usd, usage.total_cost_usd),
+    num_turns: number(raw.num_turns, raw.numTurns, usage.num_turns, usage.numTurns),
+    modelUsage: raw.modelUsage ?? usage.modelUsage ?? null,
+    usage_is_incomplete: Boolean(raw.usage_is_incomplete ?? usage.usage_is_incomplete),
+    ...metadata
+  };
+  if (normalized.total_tokens == null && normalized.input_tokens != null && normalized.output_tokens != null) {
+    normalized.total_tokens = normalized.input_tokens + normalized.output_tokens;
+  }
+  const measured = Object.entries(normalized).some(([key, value]) =>
+    !["modelUsage", "usage_is_incomplete", "source", "round"].includes(key) && value != null);
+  return measured || normalized.modelUsage ? normalized : null;
+}
+
+/** Sum terminal per-round measurements. Do not feed cumulative usage_update snapshots here. */
+export function aggregateUsage(rounds = []) {
+  if (!Array.isArray(rounds) || !rounds.length) return null;
+  const fields = ["input_tokens", "output_tokens", "total_tokens", "cache_read_input_tokens",
+    "cache_creation_input_tokens", "reasoning_tokens", "model_calls", "api_duration_ms", "cost_usd_ticks", "total_cost_usd", "num_turns"];
+  const result = { rounds: rounds.length, usage_is_incomplete: rounds.some(item => item?.usage_is_incomplete) };
+  for (const field of fields) {
+    const values = rounds.map(item => item?.[field]).filter(value => typeof value === "number" && Number.isFinite(value));
+    result[field] = values.length ? values.reduce((sum, value) => sum + value, 0) : null;
+  }
+  return result;
+}
+
 export function extractUsageFromParsed(parsed) {
   if (!parsed || typeof parsed !== "object") {
     return null;
@@ -29,18 +72,7 @@ export function extractUsageFromParsed(parsed) {
     return null;
   }
 
-  return {
-    input_tokens: usage?.input_tokens ?? null,
-    output_tokens: usage?.output_tokens ?? null,
-    total_tokens: usage?.total_tokens ?? null,
-    cache_read_input_tokens: usage?.cache_read_input_tokens ?? null,
-    cache_creation_input_tokens: usage?.cache_creation_input_tokens ?? null,
-    reasoning_tokens: usage?.reasoning_tokens ?? null,
-    total_cost_usd: root.total_cost_usd ?? null,
-    num_turns: root.num_turns ?? null,
-    modelUsage: root.modelUsage ?? null,
-    usage_is_incomplete: Boolean(root.usage_is_incomplete)
-  };
+  return normalizeUsage(root);
 }
 
 /**

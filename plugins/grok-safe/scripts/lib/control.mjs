@@ -33,6 +33,7 @@ export const SAFE_DEFAULT_DENY = [
 /** Shared parseArgs boolean option names for control surface */
 export const CONTROL_BOOLEAN_OPTIONS = [
   "plan",
+  "subagents",
   "no-subagents",
   "disable-web-search",
   "fork-session",
@@ -65,7 +66,7 @@ export function normalizeControlOptions(raw = {}) {
     permissionMode: null,
     planMode: Boolean(raw.planMode || raw.plan),
     memory: raw.memory === undefined ? null : raw.memory,
-    noSubagents: Boolean(raw.noSubagents || raw["no-subagents"]),
+    noSubagents: raw.subagents === true ? false : Boolean(raw.noSubagents || raw["no-subagents"]),
     agent: raw.agent ? String(raw.agent).trim() : null,
     allow: [...SAFE_DEFAULT_ALLOW, ...flattenStringList(raw.allow)],
     deny: [
@@ -83,7 +84,7 @@ export function normalizeControlOptions(raw = {}) {
   if (!out.sandbox) out.sandbox = "workspace";
   if (!out.planMode && !out.permissionMode) out.permissionMode = "dontAsk";
   if (out.memory == null) out.memory = false;
-  out.noSubagents = raw.noSubagents ?? raw["no-subagents"] ?? true;
+  out.noSubagents = raw.subagents === true ? false : raw.noSubagents ?? raw["no-subagents"] ?? true;
 
   if (raw.sandbox != null && raw.sandbox !== false && raw.sandbox !== "") {
     let s = String(raw.sandbox).trim().toLowerCase();
@@ -179,7 +180,8 @@ export function controlFromParsedOptions(options = {}) {
     permissionMode: options["permission-mode"],
     planMode: options.plan,
     memory,
-    noSubagents: options["no-subagents"],
+    noSubagents: options.subagents ? false : options["no-subagents"],
+    subagents: Boolean(options.subagents),
     agent: options.agent,
     allow: options.allow,
     deny: options.deny,

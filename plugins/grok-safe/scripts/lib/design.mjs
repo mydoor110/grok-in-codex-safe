@@ -2,7 +2,7 @@
  * Prompt builders that invoke Grok's bundled design / execute-plan skills.
  */
 
-export function buildDesignPrompt(brief, { extraContext = "" } = {}) {
+export function buildDesignPrompt(brief, { extraContext = "", allowSubagents = false, agentBudget = 3 } = {}) {
   const task = String(brief || "").trim();
   if (!task) {
     throw new Error("Design brief is required");
@@ -14,7 +14,7 @@ Task to design:
 ${task}
 ${extraContext ? `\nAdditional context:\n${extraContext}\n` : ""}
 Follow the bundled design skill behavior:
-- Use design-doc-writer and design-doc-reviewer persona loops (spawn_subagent) until 0 open issues.
+- ${allowSubagents ? `Use bounded design-doc-writer and design-doc-reviewer subagents (maximum ${agentBudget} active agents) until 0 open issues.` : "Run the writer and reviewer roles sequentially in this orchestrator; subagents are disabled for this run."}
 - You coordinate only; do not author the design document yourself.
 - Include mandatory sections: Key Decisions and PR Plan (ordered PRs with deps).
 - Write the final design document to a stable path and report it clearly as:
@@ -31,7 +31,9 @@ export function buildExecutePlanPrompt(
     autoPr = false,
     noGraphite = false,
     instructions = "",
-    resumePlanId = null
+    resumePlanId = null,
+    allowSubagents = false,
+    agentBudget = 3
   } = {}
 ) {
   const doc = String(designDocPath || "").trim();
@@ -53,10 +55,12 @@ Design document path: ${doc || "(resume only)"}
 Effective flags: ${flags.join(" ") || "(defaults)"}
 
 Follow the bundled execute-plan skill:
-- Parse the PR Plan DAG, topologically sort, implement in worktree-isolated subagents.
+- Parse the PR Plan DAG and topologically sort it.
+- ${allowSubagents ? `Use no more than ${agentBudget} worktree-isolated subagents and honor --concurrency.` : "Execute the ordered plan sequentially because subagents are disabled for this run."}
 - Run mandatory orchestrator-level review cycles.
 - Assemble Graphite stack if gt is available, otherwise plain-git branches.
 - You coordinate only; implementation and review go through implementer/reviewer personas.
+- Codex supplied constraints and acceptance checks are authoritative. Codex remains the final design and delivery approver.
 ${dryRun ? "- Dry-run: parse and report linearized order only; do not implement or push.\n" : ""}${
     resumePlanId ? `- Resume PLAN_ID: ${resumePlanId}\n` : ""
   }

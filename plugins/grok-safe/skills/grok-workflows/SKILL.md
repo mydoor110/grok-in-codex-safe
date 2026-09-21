@@ -22,7 +22,7 @@ grok_workflow run <name> --arg key=value --background
 grok_workflow run <name> --validate-only
 ```
 
-Do **not** reimplement workflow logic in Claude. The companion hands a prompt that tells Grok to use the workflow tool.
+Do **not** reimplement workflow logic in Codex. The companion hands a prompt that tells Grok to use the workflow tool.
 
 ## Prefer over multi-rescue when
 

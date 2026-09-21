@@ -144,12 +144,21 @@ test('ACP refuses an unsupported protocol handshake', async () => {
   try { await assert.rejects(client.initialize(), /ACP_PROTOCOL_UNSUPPORTED/); } finally { client.close(); }
 });
 
-test('concurrency limit is enforced before launching another process', async () => {
+test('concurrency limit queues a preflighted job and starts it when a slot opens', async () => {
   let preflightCalls = 0;
-  const runtime = new GrokSupervisor({ catalog: {}, maxConcurrent: 1, preflight: () => { preflightCalls++; } });
+  const runtime = new GrokSupervisor({ catalog: {}, maxConcurrent: 1, preflight: () => { preflightCalls++; return { installation: {} }; } });
   runtime.workers.set('one', { job: { status: 'running' } });
-  await assert.rejects(runtime.start(process.cwd(), { prompt: 'another' }), /CONCURRENCY_LIMIT/);
-  assert.equal(preflightCalls, 0);
+  const queued = await runtime.start(process.cwd(), { prompt: 'another', readOnly: true });
+  const worker = runtime.workers.get(queued.jobId);
+  assert.equal(queued.status, 'queued');
+  assert.equal(worker.launched, false);
+  assert.equal(preflightCalls, 2);
+  let launched = null;
+  runtime.launch = candidate => { launched = candidate; candidate.launched = true; candidate.job.status = 'running'; };
+  runtime.workers.get('one').job.status = 'completed';
+  runtime.pumpQueue();
+  assert.equal(launched, worker);
+  runtime.close();
 });
 
 test('minimal command discovery defers unrelated help until requested', async () => {

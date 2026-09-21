@@ -24,10 +24,15 @@ See [reliability and supervision](docs/reliability-and-supervision.md) for exact
 
 Code tasks now use plugin-side acceptance instead of treating a successful process exit as a completed task.
 Pass `acceptance` with exact paths, verification commands, commit and artifact requirements.
+ACP jobs use incremental decision events, per-round usage ledgers, soft/hard token limits and a
+cancellable FIFO queue above the three-job active limit. Compact responses expose response bytes
+and decision wakeups as proxy metrics because the host does not expose Codex token accounting.
 Default capabilities stop at local verify; `buildImage` / `push` / `deploy` are explicit, and
 `publish.images` plus a clean worktree (or `allowDirtyPublish`) are required before a remote push.
 Optional `preflight`, `stage`/`requires`, `cleanupPolicy`, and `artifacts/<jobId>/` reports are
 generic contract fields, not per-project hooks.
+Downstream stage gates validate the delivery manifest and require a `grok_record_review` approval
+whose diff and source-tree hashes still match the verified result.
 See [the contract and issue-by-issue coverage](docs/verified-delivery.md) for examples, compatibility changes,
 and the remaining runner-dependent limitations. Explicit `worktree=false` is honored; resume reuses
 and validates the original workspace. `list_worktrees`, `retain_worktree`, and `cleanup_worktree`
@@ -54,6 +59,7 @@ manage plugin-owned worktrees conservatively.
 | `grok_status` | Jobs + live progress / log tail + usage when available |
 | `grok_result` | Final output (plan.md preferred for plan jobs; usage + artifacts) |
 | `grok_cancel` | Cancel a background job |
+| `grok_record_review` | Persist Codex's review decision, bound to verified source hashes |
 
 **Control flags** (rescue/plan/review and long-running jobs): `sandbox`, `planMode` / `permissionMode`, `agent`, `noSubagents`, `memory` / `noMemory`, `allow` / `deny`, `disableWebSearch`, `forkSession`, `maxTurns`.
 
@@ -180,7 +186,7 @@ Default state root when unset: `~/.grok/codex-plugin/state/`. Codex does **not**
 
 - Write-capable by default.
 - Use `readOnly=true` for investigation-only work.
-- Use `worktree=true` / `check=true` / `bestOfN` for safer or parallel attempts.
+- Use `worktree=true` / `check=true`; launch separate supervised jobs for parallel candidates.
 - Full control surface available (sandbox, memory, agent, allow/deny, maxTurns, …).
 
 ### Plan / design / execute

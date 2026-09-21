@@ -46,7 +46,7 @@ export function verifyInstallation(entry = VERIFIER_PATH) {
 }
 
 export function preflightExecution(cwd, acceptance, control, { entry = VERIFIER_PATH, installation: checkedInstallation, checkWritable = true } = {}) {
-  assertPreviousStage(cwd, acceptance.requires);
+  assertPreviousStage(cwd, acceptance.requires, acceptance.stage);
   const installation = checkedInstallation || verifyInstallation(entry);
   const commands = (acceptance.requiredCommands || []).map(command => resolveVerificationCommand(command, cwd));
   const interpreters = {};

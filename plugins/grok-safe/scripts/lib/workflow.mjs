@@ -67,7 +67,7 @@ export function tryParseWorkflowMeta(filePath) {
 /**
  * Build headless prompt that invokes Grok's workflow tool.
  */
-export function buildWorkflowPrompt({ name, args = {}, validateOnly = false }) {
+export function buildWorkflowPrompt({ name, args = {}, validateOnly = false, allowSubagents = false, agentBudget = 3 }) {
   if (!name || !String(name).trim()) {
     throw new Error("Workflow name is required");
   }
@@ -86,6 +86,7 @@ export function buildWorkflowPrompt({ name, args = {}, validateOnly = false }) {
   return [
     `Run the Grok workflow named "${safeName}" using the workflow tool (not a reimplementation).`,
     `Pass args: ${argsJson}`,
+    allowSubagents ? `Bound fan-out to at most ${agentBudget} active agents.` : `Run without subagents; if the workflow requires them, stop with a clear capability error.`,
     `Prefer invoking by name if the workflow is registered under project .grok/workflows/ or user ~/.grok/workflows/.`,
     `When complete, report: display name, success/failure, structured result, and any scratch report paths.`,
     `Do not modify source files except as the workflow agents are designed to do.`

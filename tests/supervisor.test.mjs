@@ -24,6 +24,21 @@ test('unknown tool names cannot silently bypass capability policy', () => {
  assert.throws(()=>policy.before({toolName:'unrecognized_remote_tool'}),/not been authorized/);
  assert.throws(()=>policy.before({toolName:'write',toolInput:{file_path:'x'}}),/Read-only/);
 });
+test('native list_dir and scoped git diff are allowed while shell operators stay denied', () => {
+ const policy=new JobPolicy({executionPath:process.cwd(),control:normalizeControlOptions({}),acceptance:{capabilities:['read']},write:false});
+ assert.doesNotThrow(()=>policy.before({toolName:'list_dir',toolInput:{target_directory:process.cwd()}}));
+ policy.after({toolName:'list_dir'});
+ assert.doesNotThrow(()=>policy.before({toolName:'run_terminal_command',toolInput:{command:'git diff -- plugins/grok-safe/scripts/lib/events.mjs'}}));
+ assert.throws(()=>policy.before({toolName:'run_terminal_command',toolInput:{command:'git status && git diff'}}),/outside permitted/);
+});
+
+test('filesystem callback validation does not count one logical read twice', () => {
+ const policy=new JobPolicy({executionPath:process.cwd(),control:normalizeControlOptions({}),acceptance:{capabilities:['read']},write:false});
+ const file='plugins/grok-safe/scripts/lib/usage.mjs';
+ policy.before({toolName:'read_file',toolInput:{target_file:file}});
+ policy.inspectFile(file,{track:false});
+ assert.equal(policy.metrics.readVersions,1);assert.equal(policy.metrics.duplicateReads,0);
+});
 test('stop hook sends an active continuation for pending steering',()=>{
  const runtime=new GrokSupervisor();runtime.persist=()=>{};
  const worker={job:{},events:new JobEvents(),pendingMessages:[{id:'1',text:'finish missing output',delivery:'steer',receivedAt:Date.now()}],policy:{stop:()=>({})}};

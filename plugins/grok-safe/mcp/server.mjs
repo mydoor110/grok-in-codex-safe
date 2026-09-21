@@ -54,6 +54,7 @@ const CONTROL_PROPERTIES = {
   permissionMode: { type: "string", enum: SAFE_PERMISSION_VALUES, description: "Grok Safe permission mode." },
   agent: stringSchema("Grok agent name to use."),
   noSubagents: booleanSchema("Disable Grok subagents."),
+  subagents: booleanSchema("Explicitly allow Grok subagents for a bounded native workflow. Prefer separate supervised jobs for ordinary implementation."),
   memory: booleanSchema("Enable memory for this session."),
   noMemory: booleanSchema("Disable memory for this session."),
   allow: {
@@ -89,6 +90,7 @@ const COMMON_JOB_PROPERTIES = {
 const TOOL_DEFINITIONS = [
   { name: 'grok_wait_many', description: 'Wait for any of 1-8 jobs to need attention, then return compact snapshots for all. Reuse each returned cursor.', inputSchema: { type: 'object', required: ['targets'], properties: { ...WORKSPACE_PROPERTY, targets: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'object', required: ['jobId'], properties: { jobId: { type: 'string' }, cursor: { type: 'integer', minimum: 0 } } } }, timeoutMs: { type: 'integer', minimum: 0, maximum: 60000 } } } },
   { name: 'grok_retry_verification', description: 'Retry deterministic acceptance on a stopped job without asking Grok to implement again. Preserves artifacts and requires Codex review.', inputSchema: { type: 'object', required: ['jobId'], properties: { ...WORKSPACE_PROPERTY, jobId: { type: 'string' } } } },
+  { name: 'grok_record_review', description: 'Persist a Codex review decision bound to the verified source hashes. Rejects stale workspaces; approved attestations can gate later stages.', inputSchema: { type: 'object', additionalProperties: false, required: ['jobId', 'decision', 'summary'], properties: { ...WORKSPACE_PROPERTY, jobId: { type: 'string' }, decision: { type: 'string', enum: ['approved', 'changes-requested'] }, summary: { type: 'string' } } } },
   { name: "grok_capabilities", description: "Discover the installed CLI version, available commands, flags and update policy from the actual binary.", inputSchema: { type: "object", properties: { ...WORKSPACE_PROPERTY, refresh: { type: "boolean" } } } },
   { name: "grok_cli_help", description: "Read version-matched native CLI help. Use an advertised command path such as agent stdio or update.", inputSchema: { type: "object", properties: { command: { type: "string" }, ...WORKSPACE_PROPERTY } } },
   { name: "grok_cli_update", description: "Check CLI releases, install stable updates while idle, or configure background checks. auto-stable installs only when no Grok job is active.", inputSchema: { type: "object", properties: { ...WORKSPACE_PROPERTY, action: { type: "string", enum: ["check", "install", "configure"] }, mode: { type: "string", enum: ["off", "check", "auto-stable"] }, intervalMinutes: { type: "integer", minimum: 5, maximum: 1440 } } } },
@@ -134,7 +136,6 @@ const TOOL_DEFINITIONS = [
         worktreeRef: stringSchema("Base ref for the Grok worktree."),
         check: booleanSchema("Run plugin-side delivery checks (defaults to true)."),
         acceptance: ACCEPTANCE_SCHEMA,
-        bestOfN: integerSchema("Run N parallel attempts of the same task and keep the best."),
         verbatim: booleanSchema("Avoid adding extra wrapper instructions to the prompt."),
         ...COMMON_JOB_PROPERTIES
       }
@@ -201,6 +202,7 @@ const TOOL_DEFINITIONS = [
           description: "Workflow args as key=value pairs."
         },
         validateOnly: booleanSchema("Validate the workflow without executing (read-only)."),
+        agentBudget: integerSchema("Maximum native workflow agents when subagents=true."),
         prompt: stringSchema("Optional free-form prompt passed after flags."),
         ...COMMON_JOB_PROPERTIES
       }
@@ -215,6 +217,7 @@ const TOOL_DEFINITIONS = [
       additionalProperties: false,
       properties: {
         prompt: stringSchema("Design brief."),
+        agentBudget: integerSchema("Maximum native design agents when subagents=true."),
         ...COMMON_JOB_PROPERTIES
       }
     }
@@ -230,6 +233,7 @@ const TOOL_DEFINITIONS = [
         designDoc: stringSchema("Path to design doc. Omit with latest=true."),
         latest: booleanSchema("Use the latest design doc under .grok-designs/."),
         concurrency: integerSchema("Parallel PR plan concurrency."),
+        agentBudget: integerSchema("Maximum native plan agents when subagents=true."),
         dryRun: booleanSchema("Dry-run only (read-only, no yolo)."),
         autoPr: booleanSchema("Open PRs automatically when the plan supports it."),
         noGraphite: booleanSchema("Disable Graphite stacking."),
@@ -433,6 +437,7 @@ function appendControlArgs(args, input) {
   pushValue(args, input.permissionMode, "--permission-mode");
   pushValue(args, input.agent, "--agent");
   pushFlag(args, input.noSubagents, "--no-subagents");
+  pushFlag(args, input.subagents, "--subagents");
   pushFlag(args, input.memory, "--memory");
   pushFlag(args, input.noMemory, "--no-memory");
   pushArray(args, input.allow, "--allow");
@@ -534,7 +539,6 @@ export function buildCompanionInvocation(toolName, input = {}) {
       pushValue(args, input.worktreeRef, "--worktree-ref");
       if (input.check !== undefined) args.push(input.check ? "--check" : "--check=false");
       if (input.acceptance !== undefined) pushValue(args, JSON.stringify(input.acceptance), "--acceptance");
-      pushValue(args, input.bestOfN, "--best-of-n");
       pushFlag(args, input.verbatim, "--verbatim");
       appendControlArgs(args, input);
       pushFlag(args, input.json, "--json");
@@ -575,6 +579,7 @@ export function buildCompanionInvocation(toolName, input = {}) {
           }
         }
         pushFlag(args, input.validateOnly, "--validate-only");
+        pushValue(args, input.agentBudget, "--agent-budget");
         appendCommonJobArgs(args, input);
         if (hasValue(input.prompt)) {
           args.push(String(input.prompt));
@@ -589,6 +594,7 @@ export function buildCompanionInvocation(toolName, input = {}) {
       command = "design";
       args.push(command);
       appendCommonJobArgs(args, input);
+      pushValue(args, input.agentBudget, "--agent-budget");
       if (hasValue(input.prompt)) {
         args.push(String(input.prompt));
       }
@@ -602,6 +608,7 @@ export function buildCompanionInvocation(toolName, input = {}) {
         args.push(String(input.designDoc));
       }
       pushValue(args, input.concurrency, "--concurrency");
+      pushValue(args, input.agentBudget, "--agent-budget");
       pushFlag(args, input.dryRun, "--dry-run");
       pushFlag(args, input.autoPr, "--auto-pr");
       pushFlag(args, input.noGraphite, "--no-graphite");
@@ -699,9 +706,18 @@ export function buildCompanionInvocation(toolName, input = {}) {
 }
 
 export async function runCompanion(toolName, input = {}, context = {}) {
-  const content = value => ({ isError: ["failed", "incomplete", "blocked"].includes(value?.status), structuredContent: value, content: [{ type: "text", text: JSON.stringify(value) }] });
+  const content = value => {
+    const serialized = JSON.stringify(value);
+    const text = serialized.length <= 2400 ? serialized : JSON.stringify({
+      jobId: value?.jobId || value?.id || null, status: value?.status || null, cursor: value?.cursor ?? null,
+      hasMore: Boolean(value?.hasMore), structuredContent: true,
+      instruction: "Use structuredContent; the duplicate text representation was compacted."
+    });
+    return { isError: ["failed", "incomplete", "blocked"].includes(value?.status), structuredContent: value, content: [{ type: "text", text }] };
+  };
   if (toolName === 'grok_wait_many') return content(await supervisor().waitMany(resolveMcpCwd(input), input.targets, input.timeoutMs ?? 60000, context.signal));
   if (toolName === 'grok_retry_verification') return content(await supervisor().retryVerification(resolveMcpCwd(input), input.jobId));
+  if (toolName === 'grok_record_review') return content(supervisor().recordReview(resolveMcpCwd(input), input.jobId, input));
   if (toolName === "grok_capabilities") {
     const catalog = await cliCatalog.refresh(Boolean(input.refresh));
     let protocol;

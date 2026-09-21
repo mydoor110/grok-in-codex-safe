@@ -7,24 +7,26 @@ import { AcpClient } from "./acp-client.mjs";
 import { JobEvents, normalizeGrokEvent } from "./events.mjs";
 import { JobPolicy, normalizeRuntime, workspacePath } from "./job-policy.mjs";
 import { normalizeControlOptions } from "./control.mjs";
-import { normalizeAcceptance, snapshotWorkspace, deliveryArtifactPaths } from "./acceptance.mjs";
+import { normalizeAcceptance, snapshotWorkspace, deliveryArtifactPaths, writeReviewAttestation } from "./acceptance.mjs";
 import { prepareExecutionWorkspace } from "./execution-workspace.mjs";
 import { generateJobId, resolveJobsDir, writeJobFile, upsertJob, readJobFile, listJobs, recordTaskSession } from "./jobs.mjs";
 import { sanitizedEnvironment } from "../../mcp/security.mjs";
 import { preflightExecution } from './preflight.mjs';
 import { acquireExecutionLock, processAlive } from './execution-lock.mjs';
+import { aggregateUsage, normalizeUsage } from './usage.mjs';
 
 const VERIFIER = fileURLToPath(new URL("../verification-worker.mjs", import.meta.url));
 const terminal = job => !["running", "queued", "verifying"].includes(job.status);
 export function publicExecution(job, detail = "full") {
   const { initialSnapshot, finalSnapshot, security, control, promptFile, ...publicJob } = job;
   if (detail === "full") return publicJob;
-  const { prompt, checkpoint, runtime, environment, pendingMessages, resultText, tests, commandReceipts, ...summary } = publicJob;
+  const { prompt, checkpoint, runtime, environment, pendingMessages, resultText, tests, commandReceipts, availableCommands, ...summary } = publicJob;
   const receipt = ({ stdout, stderr, ...evidence }) => evidence.exitCode === 0 ? evidence : { ...evidence, stdout, stderr };
   const result = { ...summary,
     ...(tests ? { tests: tests.map(receipt) } : {}),
     ...(commandReceipts ? { commandReceipts: commandReceipts.map(receipt) } : {}),
-    ...(resultText ? { resultText: resultText.slice(0, 2000), resultTextTruncated: resultText.length > 2000 } : {}),
+    ...(resultText ? { resultText: resultText.slice(-2000), resultTextTruncated: resultText.length > 2000 } : {}),
+    ...(availableCommands ? { availableCommandNames: availableCommands.map(command => command.name || command).filter(Boolean) } : {}),
     evidenceFile: path.join(resolveJobsDir(job.workspaceRoot), `${job.id}.json`),
     eventsFile: path.join(resolveJobsDir(job.workspaceRoot), `${job.id}.events.jsonl`),
     ...(job.write ? { reviewRequired: "Codex must inspect the complete diff, untracked files and verification evidence before accepting delivery." } : {}) };
@@ -41,6 +43,27 @@ export function publicExecution(job, detail = "full") {
   if (referencedFields.length) result.referencedFields = referencedFields;
   return result;
 }
+function incrementalExecution(job, page) {
+  const evidenceFile = path.join(resolveJobsDir(job.workspaceRoot), `${job.id}.json`);
+  const eventsFile = path.join(resolveJobsDir(job.workspaceRoot), `${job.id}.events.jsonl`);
+  const result = { id: job.id, jobId: job.id, status: job.status, phase: job.phase, updatedAt: job.updatedAt,
+    stateRevision: page.cursor, unchanged: !page.events.length && !page.gap, evidenceFile, eventsFile };
+  if (page.events.some(event => ["usage", "turn_completed", "budget-warning"].includes(event.type))) {
+    result.usage = job.usage; result.usageTotal = job.usageTotal;
+  }
+  if (terminal(job) && page.events.some(event => event.type === "finished")) {
+    Object.assign(result, {
+      taskCompleted: job.taskCompleted, acceptancePassed: job.acceptancePassed,
+      implementationStatus: job.implementationStatus, artifactStatus: job.artifactStatus, testStatus: job.testStatus,
+      testSummary: job.testSummary, reviewStatus: job.reviewStatus, integrationStatus: job.integrationStatus,
+      infrastructureErrors: job.infrastructureErrors, acceptanceFailures: job.acceptanceFailures,
+      resultSummary: job.resultSummary || null,
+      resultText: String(job.resultText || "").slice(-2000),
+      resultTextTruncated: String(job.resultText || "").length > 2000
+    });
+  }
+  return result;
+}
 function verifyAsync(job, processOk = true, exitCode = 0, onProgress = () => {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [VERIFIER], { cwd: job.executionPath, env: sanitizedEnvironment(), windowsHide: true, stdio: ["pipe", "pipe", "pipe", "ipc"] });
@@ -54,9 +77,10 @@ function verifyAsync(job, processOk = true, exitCode = 0, onProgress = () => {})
 
 export class GrokSupervisor {
   constructor({ catalog, clientFactory = (binary, args, options) => new AcpClient(binary, args, options), verifier = verifyAsync, preflight = preflightExecution, maxConcurrent = 3 } = {}) {
-    this.catalog = catalog; this.clientFactory = clientFactory; this.verifier = verifier; this.preflight = preflight; this.maxConcurrent = maxConcurrent; this.workers = new Map(); this.diskEvents = new Map(); this.closing = false;
+    this.catalog = catalog; this.clientFactory = clientFactory; this.verifier = verifier; this.preflight = preflight; this.maxConcurrent = maxConcurrent; this.workers = new Map(); this.diskEvents = new Map(); this.queue = []; this.closing = false;
   }
   isBusy() { return [...this.workers.values()].some(w => !terminal(w.job)); }
+  activeCount() { return [...this.workers.values()].filter(worker => worker.launched !== false && !terminal(worker.job)).length; }
   find(cwd, id) {
     const worker = this.workers.get(id);
     if (worker && path.resolve(worker.job.workspaceRoot) !== path.resolve(cwd)) throw new Error("Job belongs to another workspace");
@@ -64,7 +88,6 @@ export class GrokSupervisor {
   }
   async start(cwd, input, { kind = "task", prompt = input.prompt, onProgress, signal } = {}) {
     if (this.catalog.updating) throw new Error("CLI_UPDATE_IN_PROGRESS: retry after the idle update finishes");
-    if ([...this.workers.values()].filter(w => !terminal(w.job)).length >= this.maxConcurrent) throw new Error('CONCURRENCY_LIMIT: wait for an active job before dispatching more work');
     if (!prompt?.trim()) throw new Error("A task prompt is required");
     const control = normalizeControlOptions(input), write = !input.readOnly && !input.planMode;
     const acceptance = normalizeAcceptance(input.acceptance || {}, control, { write }), runtime = normalizeRuntime(input.runtime);
@@ -89,7 +112,7 @@ export class GrokSupervisor {
     try { environment = this.preflight(workspace.executionPath, previous?.acceptance || acceptance, control, { installation: sourceEnvironment.installation, checkWritable: write }); }
     catch (error) { release(); throw error; }
     try {
-    const job = { id, jobId: id, schemaVersion: 5, kind, title: prompt.slice(0, 120), prompt, status: "running", write,
+    const job = { id, jobId: id, schemaVersion: 5, kind, title: prompt.slice(0, 120), prompt, status: "queued", write,
       createdAt: new Date().toISOString(), workspaceRoot: cwd, ...workspace, environment: { ...environment,
         cleanupOwnershipLabel: `io.grok-safe.job-id=${id}`,
         cleanupInstruction: 'Label task-created Docker containers, networks and volumes with cleanupOwnershipLabel; automatic cleanup retains resources without that exact label.' },
@@ -97,25 +120,46 @@ export class GrokSupervisor {
       control, security: { ...input }, acceptance: previous?.acceptance || acceptance, runtime,
       check: previous?.check ?? input.check ?? true, requestedModel: input.model || null, effort: input.effort || null,
       transport: "acp", worktree: workspace.workspaceMode === "managed-worktree", worktreeName: input.worktreeName || null,
-      logFile: path.join(cwdJobs, `${id}.log`), progressFile: path.join(cwdJobs, `${id}.progress.json`), commandReceipts: [] };
+      logFile: path.join(cwdJobs, `${id}.log`), progressFile: path.join(cwdJobs, `${id}.progress.json`), commandReceipts: [],
+      usageRounds: previous?.usageRounds || [], usageTotal: previous?.usageTotal || null };
     if (kind !== "task") job.initialSnapshot = snapshotWorkspace(job.executionPath, [...(job.acceptance.requiredArtifacts || []), ...deliveryArtifactPaths(job.executionPath, kind)]);
     const events = new JobEvents(path.join(cwdJobs, `${id}.events.jsonl`));
-    const worker = { job, events, input, pendingMessages: previous?.pendingMessages || [], currentText: "", onProgress, consumedIds: new Set(Object.keys(job.messages)), active: false, release };
+    const worker = { job, events, input, previous, pendingMessages: previous?.pendingMessages || [], currentText: "", onProgress, consumedIds: new Set(Object.keys(job.messages)), active: false, launched: false, release,
+      supervision: { responses: 0, decisionWakeups: 0, unchangedResponses: 0, responseBytes: 0 } };
     worker.policy = new JobPolicy(job, (type, data) => this.publish(worker, type, data));
-    this.workers.set(id, worker); this.persist(worker); this.publish(worker, "phase", { phase: "inspecting" });
+    worker.done = new Promise(resolve => { worker.resolveDone = resolve; });
+    this.workers.set(id, worker); this.persist(worker);
     if (prompt.length > 6000 || (acceptance.allowedPaths?.length || 0) > 8 || (acceptance.requiredCommands?.length || 0) > 5) this.publish(worker, 'scope-warning', { reason: 'Large handoff by prompt/path/verification count; Codex should consider independently verifiable subtasks. This is a heuristic, not a semantic scope assessment.' });
     if (job.baselineWarning) this.publish(worker, 'baseline-warning', { message: job.baselineWarning });
-    worker.done = this.run(worker, previous).catch(error => this.fail(worker, error)).finally(async () => {
-      try {
-        await events.flush();
-        if (events.ioError) { Object.assign(job, { status: 'incomplete', taskCompleted: false, acceptancePassed: false, infrastructureErrors: [{ code: 'EVENT_LOG_UNAVAILABLE', message: events.ioError.message }] }); this.persist(worker); }
-      } finally { release(); }
-    });
+    if (this.activeCount() < this.maxConcurrent) this.launch(worker);
+    else { this.queue.push(worker); this.publish(worker, "queued", { position: this.queue.length, maxConcurrent: this.maxConcurrent }); this.persist(worker); }
     if (input.background !== false) { worker.onProgress = undefined; return this.snapshot(worker); }
     const abort = () => this.cancel(cwd, id);
     signal?.addEventListener("abort", abort, { once: true }); if (signal?.aborted) abort();
     try { await worker.done; return this.snapshot(worker); } finally { worker.onProgress = undefined; signal?.removeEventListener("abort", abort); }
     } catch (error) { release(); throw error; }
+  }
+  launch(worker) {
+    if (worker.launched || terminal(worker.job) || this.closing) return;
+    worker.launched = true; worker.job.status = "running"; this.publish(worker, "phase", { phase: "inspecting" }); this.persist(worker);
+    this.run(worker, worker.previous).catch(error => this.fail(worker, error)).finally(async () => {
+      try {
+        await worker.events.flush();
+        if (worker.events.ioError) { Object.assign(worker.job, { status: 'incomplete', taskCompleted: false, acceptancePassed: false, infrastructureErrors: [{ code: 'EVENT_LOG_UNAVAILABLE', message: worker.events.ioError.message }] }); this.persist(worker); }
+      } finally {
+        worker.release(); worker.resolveDone?.(); this.pumpQueue();
+      }
+    });
+  }
+  pumpQueue() {
+    while (!this.closing && this.activeCount() < this.maxConcurrent && this.queue.length) {
+      const worker = this.queue.shift();
+      if (!worker || terminal(worker.job)) continue;
+      this.launch(worker);
+    }
+    this.queue.forEach((worker, index) => {
+      if (worker.job.queuePosition !== index + 1) { worker.job.queuePosition = index + 1; this.schedulePersist(worker); }
+    });
   }
   publish(worker, type, data = {}) {
     if (this.closing) return;
@@ -146,7 +190,19 @@ export class GrokSupervisor {
       try { this.persist(worker); } catch (error) { worker.persistenceError = error; this.publish(worker, 'infrastructure-error', { code: 'STATE_WRITE_FAILED', message: error.message }); if (worker.active) this.requestCancel(worker); }
     }, 100);
   }
-  snapshot(worker, cursor = 0, detail = "summary") { return { ...publicExecution(worker.job, detail), ...worker.events.since(cursor, detail !== "full"), metrics: worker.policy.metrics, liveConnection: Boolean(worker.client && !worker.client.closed), eventSource: 'live' }; }
+  snapshot(worker, cursor = 0, detail = "summary") {
+    const page = worker.events.since(cursor, detail !== "full");
+    const state = cursor > 0 && detail !== "full" ? incrementalExecution(worker.job, page) : publicExecution(worker.job, detail);
+    const payload = { ...state, ...page, metrics: worker.policy.metrics, liveConnection: Boolean(worker.client && !worker.client.closed), eventSource: 'live' };
+    worker.supervision ||= { responses: 0, decisionWakeups: 0, unchangedResponses: 0, responseBytes: 0 };
+    const bytes = Buffer.byteLength(JSON.stringify(payload));
+    worker.supervision.responses += 1;
+    worker.supervision.responseBytes += bytes;
+    if (page.events.length || page.gap) worker.supervision.decisionWakeups += 1;
+    if (!page.events.length && !page.gap) worker.supervision.unchangedResponses += 1;
+    return { ...payload, supervisionMetrics: { ...worker.supervision, lastResponseBytes: bytes,
+      measurement: "serialized-response-byte-proxy", codexTokensObservable: false } };
+  }
   handleHook(worker, event) {
     const type = event.hookEventName || event.hook_event_name;
     worker.hooksSeen = true;
@@ -184,7 +240,7 @@ export class GrokSupervisor {
     if (params.sessionId && worker.job.grokSessionId && params.sessionId !== worker.job.grokSessionId) throw new Error("Unknown ACP session");
     if (["_x.ai/hooks/run", "x.ai/hooks/run"].includes(method)) return this.handleHook(worker, params);
     if (method === "fs/read_text_file") {
-      const entry = worker.policy.inspectFile(params.path); if (!entry) throw new Error("File is unavailable");
+      const entry = worker.policy.inspectFile(params.path, { track: false }); if (!entry) throw new Error("File is unavailable");
       const lines = entry.content.split(/\r?\n/); return { content: lines.slice(Math.max(0, (params.line || 1) - 1), params.limit ? (params.line || 1) - 1 + params.limit : undefined).join("\n") };
     }
     if (method === "fs/write_text_file") {
@@ -226,8 +282,33 @@ export class GrokSupervisor {
       const event = normalizeGrokEvent({ method, params }); worker.policy.lastActivity = Date.now();
       if (event.type === "text") worker.currentText += event.data;
       if (event.type === "plan") worker.policy.context.todo = event.entries;
-      if (event.type === "usage") job.usage = event.usage;
+      if (event.type === "last_turn_summary") job.resultSummary = event.summary || event.text || event.lastAssistantMessage || null;
+      if (event.type === "session_state") {
+        if (event.model) job.resolvedModel = event.model;
+        if (event.effort) job.effectiveEffort = event.effort;
+      }
+      if (event.type === "usage") {
+        job.usage = normalizeUsage(event.usage, { source: "usage_update", round: job.round });
+      }
+      if (event.type === "turn_completed" && event.usage) {
+        const measured = normalizeUsage(event.usage, { source: "turn_completed", round: job.round });
+        if (measured) {
+          job.usageRounds = [...(job.usageRounds || []).filter(item => item.round !== job.round), measured];
+          job.usage = measured; job.usageTotal = aggregateUsage(job.usageRounds);
+          const total = job.usageTotal?.total_tokens || 0;
+          if (job.runtime.tokenSoftLimit && total >= job.runtime.tokenSoftLimit && !worker.tokenSoftWarned) {
+            worker.tokenSoftWarned = true;
+            this.publish(worker, "budget-warning", { budget: "tokenSoftLimit", used: total, limit: job.runtime.tokenSoftLimit,
+              recommendation: "Finish the current bounded step and prepare a concise handoff." });
+          }
+          if (job.runtime.tokenHardLimit && total >= job.runtime.tokenHardLimit && worker.active) {
+            worker.budgetStop = { code: "TOKEN_BUDGET_EXCEEDED", message: "Token hard limit reached", used: total, limit: job.runtime.tokenHardLimit };
+            this.requestCancel(worker);
+          }
+        }
+      }
       if (event.type) this.publish(worker, event.type, { ...event });
+      if (["usage", "turn_completed", "session_state"].includes(event.type)) this.schedulePersist(worker);
     });
     client.on("diagnostic", text => fs.appendFileSync(job.logFile, String(text).slice(-8192)));
     const caps = reusable ? warm.capabilities : await client.initialize(); worker.capabilities = caps;
@@ -245,16 +326,26 @@ export class GrokSupervisor {
     job.cliVersion = caps._meta?.agentVersion || catalog.version;
     job.modelVersion = null;
     const selectedModel = modelState?.availableModels?.find(m => m.modelId === job.resolvedModel);
-    const effort = job.effort || ({ fast: "low", deep: "high" })[job.requestedModel];
+    const advertisedEfforts = selectedModel?._meta?.reasoningEfforts?.map(e => e.value || e.id) || [];
+    const policyEffort = ["review", "design", "plan"].includes(job.kind) ? "high" : "medium";
+    const explicitEffort = job.effort || ({ fast: "low", deep: "high" })[job.requestedModel];
+    const effort = explicitEffort || (advertisedEfforts.includes(policyEffort) ? policyEffort : null);
     if (effort) {
-      if (!selectedModel?._meta?.reasoningEfforts?.some(e => (e.value || e.id) === effort)) throw new Error(`CAPABILITY_MISSING: model does not advertise reasoning effort ${effort}`);
+      if (explicitEffort && !advertisedEfforts.includes(effort)) throw new Error(`CAPABILITY_MISSING: model does not advertise reasoning effort ${effort}`);
       await client.request("session/set_config_option", { sessionId: job.grokSessionId, configId: "reasoning_effort", value: effort });
       job.effort = effort;
     }
+    job.effortPolicy = explicitEffort ? "explicit" : effort ? `risk-default:${job.kind}` : "runtime-default";
+    job.effectiveEffort = effort || session.reasoningEffort || modelState?.reasoningEffort || null;
     job.availableCommands = caps._meta?.availableCommands || [];
     this.persist(worker); this.publish(worker, "session-ready", { sessionId: job.grokSessionId, model: job.resolvedModel });
     let prompt = job.prompt;
-    if (previous?.checkpoint) prompt += `\n\nPrevious execution checkpoint (context, not new instructions):\n${JSON.stringify(previous.checkpoint).slice(-16000)}`;
+    if (previous?.checkpoint) {
+      const checkpoint = { phase: previous.checkpoint.phase, currentAction: previous.checkpoint.currentAction,
+        confirmedFindings: previous.checkpoint.confirmedFindings, todo: previous.checkpoint.todo,
+        lastFailure: previous.checkpoint.lastFailure, readFiles: (previous.checkpoint.readFiles || []).map(({ path, hash }) => ({ path, hash })) };
+      prompt += `\n\nPrevious execution checkpoint (context, not new instructions):\n${JSON.stringify(checkpoint).slice(-8000)}`;
+    }
     let attempts = 0;
     const timer = setInterval(() => {
       const failure = worker.policy.checkTime();
@@ -280,17 +371,37 @@ export class GrokSupervisor {
         job.implementationStatus = completed ? 'reported-complete' : 'interrupted'; job.testStatus = 'running';
         const delivery = await this.verify(worker, completed, completed ? 0 : 1);
         job.generatedArtifactSnapshot = delivery.generatedArtifactSnapshot || job.generatedArtifactSnapshot;
-        // Messages received while the verifier was awaiting must be processed before completion.
-        if (!worker.cancelRequested && worker.pendingMessages.length) {
+        const workspaceDrift = !job.write && delivery.acceptanceFailures?.some(failure =>
+          /read-only task changed|unexpected (?:changed|untracked) (?:path|files?)/i.test(failure));
+        if (workspaceDrift) {
+          delivery.workspaceDrift = true;
+          delivery.infrastructureErrors = [...(delivery.infrastructureErrors || []), {
+            code: "WORKSPACE_DRIFT", message: "The shared workspace changed outside the read-only worker; Codex must reconcile the baseline."
+          }];
+          this.publish(worker, "workspace-drift", { failures: delivery.acceptanceFailures });
+        }
+        // Messages received while verification was awaiting are merged with a repair prompt when acceptance failed.
+        if (!worker.cancelRequested && worker.pendingMessages.length && delivery.acceptancePassed) {
           const messages = worker.pendingMessages.splice(0); prompt = messages.map(m => m.text).join('\n\n');
           for (const message of messages) this.publish(worker, 'message-delivered', { messageId: message.id, delivery: 'next-prompt', latencyMs: Date.now() - message.receivedAt });
           worker.policy.setPhase('editing'); continue;
         }
-        if (!delivery.acceptancePassed && !delivery.infrastructureErrors?.length && completed && attempts++ < job.runtime.maxRecoveryAttempts) {
-          prompt = `Codex deterministic acceptance failed. Preserve the existing work and fix these failures now:\n${delivery.acceptanceFailures.join("\n")}`;
+        const signature = JSON.stringify(delivery.acceptanceFailures || []);
+        const repeatedFailure = signature && signature === worker.lastAcceptanceFailure;
+        worker.lastAcceptanceFailure = signature;
+        if (!delivery.acceptancePassed && !delivery.infrastructureErrors?.length && !workspaceDrift && !repeatedFailure && completed && attempts++ < job.runtime.maxRecoveryAttempts) {
+          const messages = worker.pendingMessages.splice(0);
+          const failedTests = (delivery.tests || []).filter(test => test.exitCode !== 0).slice(0, 3).map(test =>
+            `${test.command}: ${String(test.stderr || test.stdout || "").slice(-1200)}`).join("\n");
+          prompt = `Codex deterministic acceptance failed. Preserve the existing work and fix these failures now:\n${delivery.acceptanceFailures.join("\n")}` +
+            (failedTests ? `\n\nBounded failure evidence:\n${failedTests}` : "") +
+            (messages.length ? `\n\nAdditional queued guidance:\n${messages.map(message => message.text).join("\n\n")}` : "");
+          for (const message of messages) this.publish(worker, 'message-delivered', { messageId: message.id, delivery: 'acceptance-retry', latencyMs: Date.now() - message.receivedAt });
           this.publish(worker, "acceptance-retry", { attempt: attempts, failures: delivery.acceptanceFailures });
-          worker.policy.setPhase("editing"); continue;
+          worker.policy.phaseCounts.editing = 0; worker.policy.setPhase("editing"); continue;
         }
+        if (repeatedFailure && !delivery.acceptancePassed) this.publish(worker, "acceptance-stalled", { failures: delivery.acceptanceFailures,
+          recommendation: "Codex should revise the plan or verification contract before another model turn." });
         Object.assign(job, delivery); break;
       }
       if (worker.cancelRequested || worker.budgetStop) {
@@ -363,7 +474,12 @@ export class GrokSupervisor {
       const file = path.join(resolveJobsDir(cwd), `${id}.events.jsonl`);
       const stamp = fs.existsSync(file) ? `${fs.statSync(file).size}:${fs.statSync(file).mtimeMs}` : 'missing';
       if (this.diskEvents.get(file)?.stamp !== stamp) this.diskEvents.set(file, { stamp, events: await JobEvents.load(file) });
-      return { ...publicExecution(job, detail), ...this.diskEvents.get(file).events.since(cursor, detail !== 'full'), liveConnection: false, eventSource: 'history' };
+      const page = this.diskEvents.get(file).events.since(cursor, detail !== 'full');
+      const state = cursor > 0 && detail !== 'full' ? incrementalExecution(job, page) : publicExecution(job, detail);
+      const payload = { ...state, ...page, liveConnection: false, eventSource: 'history' };
+      return { ...payload, supervisionMetrics: { responses: 1, decisionWakeups: page.events.length || page.gap ? 1 : 0,
+        unchangedResponses: !page.events.length && !page.gap ? 1 : 0, responseBytes: Buffer.byteLength(JSON.stringify(payload)),
+        lastResponseBytes: Buffer.byteLength(JSON.stringify(payload)), measurement: "serialized-response-byte-proxy", codexTokensObservable: false } };
     }
     if (!terminal(worker.job)) await worker.events.wait(cursor, timeoutMs, signal, detail !== "full");
     await worker.events.flush();
@@ -396,6 +512,23 @@ export class GrokSupervisor {
       return publicExecution(job, 'summary');
     } finally { release(); }
   }
+  recordReview(cwd, id, { decision, summary }) {
+    const live = this.find(cwd, id), job = live?.job || readJobFile(cwd, id);
+    if (!job || !terminal(job)) throw new Error("REVIEW_NOT_READY: job must be stopped");
+    if (!job.acceptancePassed || !job.stageResult || !job.finalSnapshot) throw new Error("REVIEW_NOT_READY: accepted delivery evidence is required");
+    const current = snapshotWorkspace(job.executionPath, [...(job.acceptance?.requiredArtifacts || []), ...deliveryArtifactPaths(job.executionPath, job.kind)]);
+    if (current.head !== job.finalSnapshot.head || current.status !== job.finalSnapshot.status || JSON.stringify(current.files) !== JSON.stringify(job.finalSnapshot.files)) {
+      throw new Error("REVIEW_STALE: workspace changed after verification; retry verification before recording review");
+    }
+    const attestation = writeReviewAttestation(job.executionPath, job.stageResult, { decision, summary });
+    job.reviewStatus = decision === "approved" ? "approved" : "changes-requested";
+    job.review = attestation.review; job.reviewFile = attestation.path; job.reviewedDiffHash = job.diffHash;
+    job.finalSnapshot = snapshotWorkspace(job.executionPath, [...(job.acceptance?.requiredArtifacts || []), ...deliveryArtifactPaths(job.executionPath, job.kind)]);
+    job.generatedArtifactSnapshot = { ...(job.generatedArtifactSnapshot || {}), [attestation.path]: job.finalSnapshot.files[attestation.path] };
+    if (live) { this.persist(live); this.publish(live, "review-recorded", { decision, reviewFile: attestation.path, diffHash: job.diffHash }); }
+    else { writeJobFile(cwd, job); upsertJob(cwd, job); }
+    return publicExecution(job, "summary");
+  }
   requestCancel(worker) {
     worker.client.notify("session/cancel", { sessionId: worker.job.grokSessionId });
     if (!worker.cancelTimer) { worker.cancelTimer = setTimeout(() => worker.client.close(Object.assign(new Error("Native cancellation did not settle within 15 seconds"), { code: "CANCEL_TIMEOUT" })), 15000); worker.cancelTimer.unref(); }
@@ -403,6 +536,12 @@ export class GrokSupervisor {
   cancel(cwd, id) {
     const worker = this.find(cwd, id); if (!worker) throw new Error("No active ACP connection for job");
     if (terminal(worker.job)) return this.snapshot(worker);
+    if (!worker.launched) {
+      this.queue = this.queue.filter(candidate => candidate !== worker);
+      Object.assign(worker.job, { status: "cancelled", taskCompleted: false, acceptancePassed: false, finishedAt: new Date().toISOString(), phase: "cancelled" });
+      this.publish(worker, "finished", { status: "cancelled", queued: true }); this.persist(worker); worker.release(); worker.resolveDone?.(); this.pumpQueue();
+      return { jobId: id, status: "cancelled" };
+    }
     worker.cancelRequested = true; if (worker.client && worker.job.grokSessionId) this.requestCancel(worker);
     this.publish(worker, "cancel-requested"); return { jobId: id, status: "cancelling" };
   }
@@ -419,5 +558,5 @@ export class GrokSupervisor {
       w.client.close(); await exited;
     }
   }
-  close() { this.closing = true; for (const worker of this.workers.values()) { clearTimeout(worker.persistTimer); clearTimeout(worker.idleTimer); clearTimeout(worker.cancelTimer); worker.events?.flush(); worker.client?.close(); worker.hookServer?.close(); } }
+  close() { this.closing = true; for (const worker of this.workers.values()) { clearTimeout(worker.persistTimer); clearTimeout(worker.idleTimer); clearTimeout(worker.cancelTimer); worker.events?.flush(); worker.client?.close(); worker.hookServer?.close(); if (!worker.launched && !terminal(worker.job)) { worker.job.status = "interrupted"; worker.release?.(); worker.resolveDone?.(); } } this.queue = []; }
 }

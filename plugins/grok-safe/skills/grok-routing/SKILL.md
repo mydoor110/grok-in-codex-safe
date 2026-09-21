@@ -30,9 +30,9 @@ reported success.
 
 - Substantial debugging after Codex is stuck
 - Second-opinion implementation of a non-trivial change
-- Best-of-N alternative approaches (`bestOfN`)
+- Alternative approaches as separate supervised jobs when the uncertainty justifies the extra token cost
 - Substantial edits that land in an isolated worktree (the safe default)
-- **Ambiguous architecture** → `grok_plan` then implement, or `grok_design`
+- **Ambiguous architecture** → Codex defines constraints and acceptance first; use `grok_plan` or `grok_design` for a second opinion
 - **Multi-PR delivery from a design doc** → `grok_execute_plan`
 - **Named multi-agent recipes** → `grok_workflow`
 - **PR CI/review babysitting** → `grok_babysit`
@@ -52,8 +52,8 @@ reported success.
 | User intent | Prefer |
 | --- | --- |
 | Stuck on a bug / implement a fix | `grok_rescue` (+ worktree + check) |
-| Unclear approach before coding | `grok_plan` |
-| Architecture / design doc + PR plan | `grok_design` |
+| Unclear approach before coding | Codex frames constraints, then `grok_plan` for evidence/alternatives |
+| Architecture / design doc + PR plan | Codex owns decisions; `grok_design` drafts and challenges |
 | Ship a design doc’s PR DAG | `grok_execute_plan` (or `latest=true` after design) |
 | Multi-dimension structured fan-out | `grok_workflow` |
 | Ship quality on a branch/PR | `grok_review` (+ `postPending` for GH) |
@@ -67,10 +67,11 @@ reported success.
 
 Prefer this sequence over a single giant rescue:
 
-1. **`grok_plan`** — explore + plan.md when the approach is unclear (artifacts under `.grok-plans/`).
-2. **`grok_design`** — consensus design doc + PR Plan → artifacts under `.grok-designs/`.
+1. **Codex framing** — define interfaces, invariants, dependencies, risks, and deterministic acceptance.
+2. **`grok_plan` / `grok_design`** — explore and draft alternatives under those constraints.
 3. **`grok_execute_plan`** with `latest=true` (or explicit `designDoc`) — implement the PR DAG in worktrees.
-4. **`grok_review`** / **`grok_babysit`** — quality and CI/review loop.
+4. **Codex review** — inspect the complete diff and evidence; optionally use `grok_review` as a second opinion.
+5. **`grok_babysit`** — CI/review loop when explicitly applicable.
 
 Use **`grok_workflow`** when you have a named multi-agent recipe (fan-out review dimensions, etc.), not ad-hoc parallel rescues.
 
@@ -104,6 +105,8 @@ How:
 4. Collect results with `grok_result`.
 
 Do **not** serialize independent Grok work just because another job is running.
+The managed ACP supervisor accepts at most three active jobs by default. Dispatch additional work after a slot completes.
+Do not pass `bestOfN`; launch explicit jobs so each candidate retains its own budget, permissions, evidence, and review.
 
 ## Tool map
 
